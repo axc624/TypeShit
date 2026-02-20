@@ -20,15 +20,25 @@
       margin: 30px 0;
     }
 
-    .column {
-      font-size: 40px;
-      background: #222;
-      padding: 20px;
-      border-radius: 10px;
-      cursor: pointer;
-      width: 60px;
-      transition: 0.2s;
-    }
+  .column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 40px;
+  background: #222;
+  padding: 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 70px;
+  gap: 10px;
+}
+
+.column div {
+  background: #333;
+  padding: 10px;
+  width: 100%;
+  border-radius: 6px;
+}
 
     .column:hover {
       background: #333;
@@ -66,34 +76,40 @@
   const columnsDiv = document.getElementById("columns");
   const result = document.getElementById("result");
 
-  let columns = [];
-
   function createColumns() {
     for (let i = 0; i < wordLength; i++) {
       let colLetters = [];
+
       for (let j = 0; j < 3; j++) {
         colLetters.push(letters[Math.floor(Math.random() * letters.length)]);
       }
 
-      columns.push({ letters: colLetters, index: 0 });
+      let columnDiv = document.createElement("div");
+      columnDiv.className = "column";
 
-      let div = document.createElement("div");
-      div.className = "column";
-      div.innerText = colLetters[0];
-      div.onclick = () => shiftLetter(i, div);
+      colLetters.forEach(letter => {
+        let letterDiv = document.createElement("div");
+        letterDiv.innerText = letter;
+        columnDiv.appendChild(letterDiv);
+      });
 
-      columnsDiv.appendChild(div);
+      columnDiv.onclick = () => rotateColumn(columnDiv);
+
+      columnsDiv.appendChild(columnDiv);
     }
   }
 
-  function shiftLetter(colIndex, div) {
-    let column = columns[colIndex];
-    column.index = (column.index + 1) % column.letters.length;
-    div.innerText = column.letters[column.index];
+  function rotateColumn(columnDiv) {
+    let first = columnDiv.firstChild;
+    columnDiv.appendChild(first);
   }
 
   function checkWord() {
-    let word = columns.map(c => c.letters[c.index]).join("");
+    let word = "";
+    document.querySelectorAll(".column").forEach(col => {
+      word += col.children[0].innerText;
+    });
+
     result.innerText = "You made: " + word;
   }
 
