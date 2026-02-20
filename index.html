@@ -12,40 +12,42 @@
       color: #fff;
       text-align: center;
       margin: 40px 0 80px;
+      padding: 0 12px;
     }
 
-    h1 { margin: 0 0 8px; }
-    .hint { opacity: 0.75; margin: 0 0 18px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    .hint { opacity: 0.75; margin: 0 0 18px; line-height: 1.3; }
 
     .columns {
       display: flex;
       justify-content: center;
       gap: 14px;
-      margin: 20px 0 10px;
+      margin: 18px 0 8px;
     }
 
     .column {
-      width: 80px;
+      width: 84px;
       cursor: pointer;
       user-select: none;
-      touch-action: none; /* enables swipe */
+      touch-action: none; /* important for swipe */
     }
 
     .wheel {
       position: relative;
-      height: 210px; /* 3 rows x 70px */
+      height: 210px;           /* 3 rows x 70px */
       overflow: hidden;
       border-radius: 14px;
       background: #1b1b1b;
       border: 1px solid #333;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.35);
     }
 
-    /* Highlight the middle row */
+    /* Middle-row highlight band */
     .wheel::after {
       content: "";
       position: absolute;
       left: 0; right: 0;
-      top: 70px;
+      top: 70px;               /* middle row starts at 70px */
       height: 70px;
       background: rgba(255,255,255,0.08);
       border-top: 1px solid rgba(255,255,255,0.15);
@@ -68,32 +70,38 @@
       align-items: center;
       justify-content: center;
       font-size: 44px;
-      font-weight: 700;
+      font-weight: 800;
+      letter-spacing: 0.5px;
       color: #f5f5f5;
     }
 
     button {
-      margin-top: 18px;
-      padding: 10px 20px;
+      margin-top: 16px;
+      padding: 10px 18px;
       font-size: 18px;
-      border-radius: 6px;
+      border-radius: 8px;
       border: none;
       background: #4CAF50;
       color: white;
       cursor: pointer;
     }
-    button:hover { background: #45a049; }
+
+    button:hover { filter: brightness(1.03); }
 
     #result {
-      margin-top: 16px;
+      margin-top: 14px;
       font-size: 20px;
+      min-height: 28px;
     }
   </style>
 </head>
 
 <body>
   <h1>TypeShit</h1>
-  <p class="hint">Swipe up/down (phone) or mouse wheel (desktop). Middle row forms the word.</p>
+  <p class="hint">
+    Middle row makes the word.<br/>
+    Swipe up/down (phone) or scroll wheel (desktop).
+  </p>
 
   <div class="columns" id="columns"></div>
 
@@ -101,24 +109,29 @@
   <p id="result"></p>
 
   <script>
+    // --- Config ---
     const wordLength = 5;
     const lettersPool = ["C","A","T","D","O","G","R","E","N","S","L","I","P","H","U"];
-    const ROW_H = 70;
-    const ACTIVE_ROW = 1;
+    const ROW_H = 70;           // must match .cell height
+    const ACTIVE_ROW = 1;       // middle row (0,1,2)
+    const RING_LEN = 11;        // longer ring = nicer wheel feel
 
     const SWIPE_THRESHOLD_PX = 18;
-    const WHEEL_COOLDOWN_MS = 120;
+    const WHEEL_COOLDOWN_MS = 110;
 
+    // --- DOM ---
     const columnsDiv = document.getElementById("columns");
     const result = document.getElementById("result");
-    const columns = [];
+
+    // Each column: { ring: string[], offset: number, strip: HTMLElement }
+    const cols = [];
 
     function randLetter() {
       return lettersPool[Math.floor(Math.random() * lettersPool.length)];
     }
 
     function buildColumn(i) {
-      const ring = Array.from({ length: 9 }, randLetter);
+      const ring = Array.from({ length: RING_LEN }, randLetter);
 
       const col = document.createElement("div");
       col.className = "column";
@@ -140,9 +153,9 @@
       col.appendChild(wheel);
       columnsDiv.appendChild(col);
 
-      columns[i] = { ring, offset: 0, strip };
+      cols[i] = { ring, offset: 0, strip };
 
-      // Desktop: mouse wheel
+      // Desktop: scroll wheel up/down per column
       let wheelLocked = false;
       col.addEventListener("wheel", (e) => {
         e.preventDefault();
@@ -155,7 +168,7 @@
         setTimeout(() => (wheelLocked = false), WHEEL_COOLDOWN_MS);
       }, { passive: false });
 
-      // Mobile/Touch: swipe
+      // Mobile/Touch: swipe up/down
       let startY = null;
       let active = false;
 
@@ -167,12 +180,13 @@
 
       col.addEventListener("pointermove", (e) => {
         if (!active || startY === null) return;
+
         const dy = e.clientY - startY;
 
-        if (dy <= -SWIPE_THRESHOLD_PX) {
+        if (dy <= -SWIPE_THRESHOLD_PX) {      // swipe up
           shift(i, +1);
           startY = e.clientY;
-        } else if (dy >= SWIPE_THRESHOLD_PX) {
+        } else if (dy >= SWIPE_THRESHOLD_PX) { // swipe down
           shift(i, -1);
           startY = e.clientY;
         }
@@ -181,32 +195,32 @@
       col.addEventListener("pointerup", () => { active = false; startY = null; });
       col.addEventListener("pointercancel", () => { active = false; startY = null; });
 
-      // Optional click/tap
+      // Tap/click: quick move down one
       col.addEventListener("click", () => shift(i, +1));
 
       render(i, false);
     }
 
     function render(i, animate = true) {
-      const col = columns[i];
-      col.strip.style.transition = animate
+      const c = cols[i];
+      c.strip.style.transition = animate
         ? "transform 280ms cubic-bezier(.22,1.2,.36,1)"
         : "none";
-      col.strip.style.transform = `translateY(-${col.offset * ROW_H}px)`;
+      c.strip.style.transform = `translateY(-${c.offset * ROW_H}px)`;
     }
 
     function shift(i, dir) {
-      const col = columns[i];
-      const n = col.ring.length;
-      col.offset = (col.offset + dir + n) % n;
+      const c = cols[i];
+      const n = c.ring.length;
+      c.offset = (c.offset + dir + n) % n;
       render(i, true);
       showWord();
     }
 
     function currentWord() {
-      return columns.map(col => {
-        const idx = (col.offset + ACTIVE_ROW) % col.ring.length;
-        return col.ring[idx];
+      return cols.map(c => {
+        const idx = (c.offset + ACTIVE_ROW) % c.ring.length;
+        return c.ring[idx];
       }).join("");
     }
 
@@ -214,9 +228,12 @@
       result.textContent = "Middle Row Word: " + currentWord();
     }
 
-    function checkWord() { showWord(); }
-    window.checkWord = checkWord;
+    function checkWord() {
+      showWord();
+    }
+    window.checkWord = checkWord; // so the button works
 
+    // Build the board
     for (let i = 0; i < wordLength; i++) buildColumn(i);
     showWord();
   </script>
