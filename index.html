@@ -35,7 +35,7 @@
 
     .wheel {
       position: relative;
-      height: 210px;
+      height: 210px; /* 3 rows */
       overflow: hidden;
       border-radius: 14px;
       background: #1b1b1b;
@@ -43,6 +43,7 @@
       box-shadow: 0 8px 22px rgba(0,0,0,0.35);
     }
 
+    /* Middle row highlight */
     .wheel::after {
       content: "";
       position: absolute;
@@ -58,7 +59,6 @@
     .strip {
       position: absolute;
       width: 100%;
-      /* slower/smoother */
       transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
       will-change: transform;
     }
@@ -73,6 +73,9 @@
       letter-spacing: 0.6px;
       color: #f5f5f5;
     }
+
+    /* Optional subtle fade on the “edge” rows (top/bottom) */
+    .cell.edge { opacity: 0.55; }
 
     .actions {
       margin-top: 8px;
@@ -161,7 +164,7 @@
 
 <body>
   <h1>TypeShit Daily</h1>
-  <p class="hint">Swipe/scroll. Middle row makes the word. Landing on a valid word auto-adds it.</p>
+  <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).</p>
 
   <div class="columns" id="columns"></div>
 
@@ -195,18 +198,20 @@
   // Reads from CSS so mobile stays aligned
   let ROW_H = 70;
 
-  const ACTIVE_ROW = 1;
-  const RING_LEN = 11;
+  // BOUNDED LIST settings:
+  // We render a “viewport” of 3 rows (top, middle, bottom). Middle is selected.
+  const ACTIVE_ROW = 1; // middle row index in the viewport
 
   // Difficulty knobs
-  const LETTERS_PER_COL = 5;        // fewer = easier, more = harder
-  const SEED_WORD_COUNT = 12;       // more seeds => more overlap/solutions
+  const LETTERS_PER_COL = 5;
+  const SEED_WORD_COUNT = 12;
   const TARGET_MIN_SOLUTIONS = 8;
   const TARGET_MAX_SOLUTIONS = 25;
 
-  // Input feel
-  const SWIPE_THRESHOLD_PX = 18;
-  const WHEEL_COOLDOWN_MS = 110;
+  // Input feel (SLOWER ON PHONE)
+  const SWIPE_THRESHOLD_PX = 42;        // bigger = slower
+  const TOUCH_STEP_COOLDOWN_MS = 160;   // prevents rapid multi-steps
+  const WHEEL_COOLDOWN_MS = 140;        // prevents insane wheel spam
 
   // Auto-submit feel
   const AUTO_SUBMIT_COOLDOWN_MS = 220;
@@ -225,7 +230,7 @@
   // -----------------------
   // State
   // -----------------------
-  // cols[i] = { ring, offset, strip }
+  // cols[i] = { list: string[], index: number, strip: HTMLElement, cells: HTMLElement[] }
   const cols = [];
 
   let DICT_LIST = [];
@@ -256,15 +261,15 @@
       year: "numeric",
       month: "2-digit",
       day: "2-digit"
-    }).format(new Date()); // YYYY-MM-DD
+    }).format(new Date());
   }
 
   function storageKey() {
-    return `typeshit|${dayKeyPT()}|len${wordLength}|bank${LETTERS_PER_COL}`;
+    return `typeshit|${dayKeyPT()}|len${wordLength}|bank${LETTERS_PER_COL}|bounded`;
   }
 
   function hashStringToUint32(str) {
-    let h = 2166136261; // FNV-1a 32-bit
+    let h = 2166136261;
     for (let i = 0; i < str.length; i++) {
       h ^= str.charCodeAt(i);
       h = Math.imul(h, 16777619);
@@ -285,10 +290,7 @@
   // UI
   // -----------------------
   function currentWord() {
-    return cols.map(c => {
-      const idx = (c.offset + ACTIVE_ROW) % c.ring.length;
-      return c.ring[idx];
-    }).join("").toLowerCase();
+    return cols.map(c => c.list[c.index]).join("").toLowerCase();
   }
 
   function showCurrentWord() {
@@ -337,7 +339,7 @@
   function saveProgress() {
     try {
       const data = {
-        offsets: cols.map(c => c.offset),
+        indices: cols.map(c => c.index),
         found: Array.from(FOUND)
       };
       localStorage.setItem(storageKey(), JSON.stringify(data));
@@ -350,12 +352,13 @@
       if (!raw) return false;
       const data = JSON.parse(raw);
 
-      if (!data || !Array.isArray(data.offsets) || !Array.isArray(data.found)) return false;
-      if (data.offsets.length !== wordLength) return false;
+      if (!data || !Array.isArray(data.indices) || !Array.isArray(data.found)) return false;
+      if (data.indices.length !== wordLength) return false;
 
       for (let i = 0; i < wordLength; i++) {
-        cols[i].offset = ((data.offsets[i] ?? 0) % cols[i].ring.length + cols[i].ring.length) % cols[i].ring.length;
-        render(i, false);
+        const max = cols[i].list.length - 1;
+        cols[i].index = Math.max(0, Math.min(max, data.indices[i] ?? 0));
+        renderColumn(i, false);
       }
 
       FOUND = new Set(
@@ -380,7 +383,7 @@
   }
 
   // -----------------------
-  // Dictionary (FIXED)
+  // Dictionary
   // -----------------------
   async function loadDictionary() {
     statusEl.textContent = "Loading words.txt…";
@@ -400,12 +403,11 @@
     }
 
     DICT_SET = new Set(DICT_LIST);
-
     statusEl.textContent = `Loaded ${DICT_LIST.length.toLocaleString()} words`;
   }
 
   // -----------------------
-  // Build wheels
+  // Column rendering (bounded list)
   // -----------------------
   function buildColumn(i) {
     const col = document.createElement("div");
@@ -417,22 +419,24 @@
     const strip = document.createElement("div");
     strip.className = "strip";
 
-    const ring = Array.from({ length: RING_LEN }, () => "A");
-
-    for (const ch of ring) {
+    // We only keep 3 visible cells (top/middle/bottom)
+    const cells = [];
+    for (let r = 0; r < 3; r++) {
       const cell = document.createElement("div");
       cell.className = "cell";
-      cell.textContent = ch;
+      if (r !== ACTIVE_ROW) cell.classList.add("edge");
+      cell.textContent = "A";
       strip.appendChild(cell);
+      cells.push(cell);
     }
 
     wheel.appendChild(strip);
     col.appendChild(wheel);
     columnsDiv.appendChild(col);
 
-    cols[i] = { ring, offset: 0, strip };
+    cols[i] = { list: ["A"], index: 0, strip, cells };
 
-    // Desktop wheel
+    // Desktop wheel: slow it down with cooldown
     let wheelLocked = false;
     col.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -443,9 +447,10 @@
       setTimeout(() => wheelLocked = false, WHEEL_COOLDOWN_MS);
     }, { passive: false });
 
-    // Touch swipe
+    // Touch swipe: threshold + cooldown
     let startY = null;
     let active = false;
+    let lastTouchStepAt = 0;
 
     col.addEventListener("pointerdown", (e) => {
       active = true;
@@ -455,49 +460,83 @@
 
     col.addEventListener("pointermove", (e) => {
       if (!active || startY === null) return;
+
+      const now = Date.now();
+      if (now - lastTouchStepAt < TOUCH_STEP_COOLDOWN_MS) return;
+
       const dy = e.clientY - startY;
 
       if (dy <= -SWIPE_THRESHOLD_PX) {
         shift(i, +1);
         startY = e.clientY;
+        lastTouchStepAt = now;
       } else if (dy >= SWIPE_THRESHOLD_PX) {
         shift(i, -1);
         startY = e.clientY;
+        lastTouchStepAt = now;
       }
     });
 
     col.addEventListener("pointerup", () => { active = false; startY = null; });
     col.addEventListener("pointercancel", () => { active = false; startY = null; });
 
-    // Tap
+    // Tap moves down (bounded)
     col.addEventListener("click", () => shift(i, +1));
 
-    render(i, false);
+    renderColumn(i, false);
   }
 
-  function render(i, animate = true) {
+  function renderColumn(i, animate = true) {
     const c = cols[i];
+
+    // Set the three visible letters based on current index (bounded)
+    const topIdx = c.index - 1;
+    const midIdx = c.index;
+    const botIdx = c.index + 1;
+
+    c.cells[0].textContent = (topIdx >= 0) ? c.list[topIdx] : "";
+    c.cells[1].textContent = c.list[midIdx] ?? "";
+    c.cells[2].textContent = (botIdx < c.list.length) ? c.list[botIdx] : "";
+
+    // “fake” slide: animate the strip then snap back to 0
+    // We translate by ±ROW_H depending on direction in shift().
     c.strip.style.transition = animate
       ? "transform 420ms cubic-bezier(.22,1.2,.36,1)"
       : "none";
-    c.strip.style.transform = `translateY(-${c.offset * ROW_H}px)`;
+    if (!animate) c.strip.style.transform = "translateY(0px)";
   }
 
   function shift(i, dir) {
     const c = cols[i];
-    const n = c.ring.length;
-    c.offset = (c.offset + dir + n) % n;
-    render(i, true);
-    showCurrentWord();
-    autoSubmitIfValid();
-    saveProgress();
+    const max = c.list.length - 1;
+
+    // BOUNDED: clamp instead of wrap
+    const next = Math.max(0, Math.min(max, c.index + dir));
+    if (next === c.index) return; // already at top/bottom
+
+    // Animate “movement” then update letters and snap
+    const deltaPx = -dir * ROW_H; // dir +1 means we want content to move up visually
+    c.strip.style.transition = "transform 420ms cubic-bezier(.22,1.2,.36,1)";
+    c.strip.style.transform = `translateY(${deltaPx}px)`;
+
+    // after animation, commit new index, re-render letters, snap transform to 0
+    const prevIndex = c.index;
+    c.index = next;
+
+    setTimeout(() => {
+      // update visible cells for the new index
+      renderColumn(i, false);
+      c.strip.style.transform = "translateY(0px)";
+      showCurrentWord();
+      autoSubmitIfValid();
+      saveProgress();
+    }, 430);
   }
 
   // -----------------------
-  // Puzzle generation (FIXED: never allow empty sets)
+  // Puzzle generation
   // -----------------------
   function buildColumnSetsFromSeeds(rng) {
-    // Start sets with letters from random dictionary words (guarantees solvable)
     let sets = Array.from({ length: wordLength }, () => new Set());
 
     for (let s = 0; s < SEED_WORD_COUNT; s++) {
@@ -505,7 +544,6 @@
       for (let i = 0; i < wordLength; i++) sets[i].add(w[i].toUpperCase());
     }
 
-    // Expand/trim each set to exactly LETTERS_PER_COL
     for (let i = 0; i < wordLength; i++) {
       while (sets[i].size < LETTERS_PER_COL) {
         sets[i].add(lettersPool[Math.floor(rng() * lettersPool.length)]);
@@ -518,10 +556,6 @@
         }
         sets[i] = new Set(arr.slice(0, LETTERS_PER_COL));
       }
-    }
-
-    // Safety: never empty
-    for (let i = 0; i < wordLength; i++) {
       if (sets[i].size === 0) sets[i].add("A");
     }
 
@@ -540,24 +574,12 @@
     return sols;
   }
 
-  function applySetsToWheels(sets, rng) {
+  function applySetsToColumns(sets, rng) {
     for (let i = 0; i < wordLength; i++) {
-      const allowed = Array.from(sets[i]);
-      const c = cols[i];
-
-      // allowed should never be empty, but guard anyway:
-      const safeAllowed = allowed.length ? allowed : ["A"];
-
-      for (let k = 0; k < RING_LEN; k++) {
-        c.ring[k] = safeAllowed[Math.floor(rng() * safeAllowed.length)];
-      }
-
-      // update DOM cells
-      const cells = c.strip.querySelectorAll(".cell");
-      for (let k = 0; k < RING_LEN; k++) cells[k].textContent = c.ring[k];
-
-      c.offset = Math.floor(rng() * RING_LEN);
-      render(i, false);
+      const allowed = Array.from(sets[i]).sort(); // stable order feels more TypeShift-ish
+      cols[i].list = allowed.length ? allowed : ["A"];
+      cols[i].index = Math.floor(rng() * cols[i].list.length);
+      renderColumn(i, false);
     }
   }
 
@@ -568,16 +590,14 @@
     let sets = null;
     let sols = null;
 
-    // Try a few times to hit the desired solution range
-    for (let tries = 0; tries < 50; tries++) {
+    for (let tries = 0; tries < 60; tries++) {
       sets = buildColumnSetsFromSeeds(rng);
       sols = computeSolutions(sets);
       if (sols.size >= TARGET_MIN_SOLUTIONS && sols.size <= TARGET_MAX_SOLUTIONS) break;
     }
 
-    // If still weirdly empty, show message (shouldn't happen if dictionary loaded)
     if (!sols || sols.size === 0) {
-      statusEl.textContent = "Could not generate puzzle (no solutions). Check words.txt contains many 5-letter words.";
+      statusEl.textContent = "Could not generate puzzle. Check words.txt (needs many 5-letter words).";
       return;
     }
 
@@ -586,13 +606,12 @@
     lastAutoWord = "";
     lastAutoAt = 0;
 
-    applySetsToWheels(sets, rng);
+    applySetsToColumns(sets, rng);
 
     renderFound();
     updateStatus();
     showCurrentWord();
 
-    // Restore saved progress if any
     const restored = loadProgress();
     if (!restored) saveProgress();
   }
@@ -631,7 +650,6 @@
   }
 
   function submitWord() {
-    // manual submit just triggers the same logic
     const w = currentWord();
 
     if (!SOLUTIONS.size) {
@@ -661,7 +679,7 @@
   function resetToday() {
     closeOverlay();
     clearProgress();
-    generateDailyPuzzle(); // same seed => same puzzle
+    generateDailyPuzzle();
     resultEl.textContent = "";
   }
   window.resetToday = resetToday;
@@ -670,13 +688,12 @@
   // Init
   // -----------------------
   async function init() {
-    // Build columns first so .cell exists for measuring
     for (let i = 0; i < wordLength; i++) buildColumn(i);
 
     syncRowHeightFromCSS();
     window.addEventListener("resize", () => {
       syncRowHeightFromCSS();
-      for (let i = 0; i < wordLength; i++) render(i, false);
+      for (let i = 0; i < wordLength; i++) renderColumn(i, false);
     });
 
     showCurrentWord();
