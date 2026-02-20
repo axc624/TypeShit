@@ -17,7 +17,7 @@
 
     h1 { margin: 0 0 8px; font-size: 34px; }
     .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
-    #status { opacity: 0.8; margin-top: 8px; }
+    #status { opacity: 0.85; margin-top: 8px; }
 
     .board {
       display: flex;
@@ -33,11 +33,9 @@
       margin: 10px 0 6px;
     }
 
-    .colwrap {
-      width: 84px;
-    }
+    .colwrap { width: 84px; }
 
-    /* Letter bank shown above wheel */
+    /* Letter bank above wheel */
     .bank {
       display: grid;
       grid-auto-flow: column;
@@ -55,22 +53,21 @@
       border-radius: 10px;
       background: #1a1a1a;
       border: 1px solid #2e2e2e;
-      font-weight: 800;
+      font-weight: 900;
       letter-spacing: 0.6px;
       font-size: 14px;
     }
 
-    /* Column interaction area */
     .column {
       width: 84px;
       cursor: pointer;
       user-select: none;
-      touch-action: none; /* important for swipe */
+      touch-action: none; /* swipe support */
     }
 
     .wheel {
       position: relative;
-      height: 210px;           /* 3 rows x 70px */
+      height: 210px; /* 3 rows x 70px */
       overflow: hidden;
       border-radius: 14px;
       background: #1b1b1b;
@@ -78,7 +75,7 @@
       box-shadow: 0 8px 22px rgba(0,0,0,0.35);
     }
 
-    /* Middle-row highlight band */
+    /* Middle-row highlight */
     .wheel::after {
       content: "";
       position: absolute;
@@ -154,9 +151,36 @@
       border: 1px solid #333;
       padding: 6px 10px;
       border-radius: 999px;
-      font-weight: 800;
+      font-weight: 900;
       letter-spacing: 0.4px;
     }
+
+    /* End screen overlay */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.65);
+      padding: 18px;
+      z-index: 999;
+    }
+    #overlay.show { display: flex; }
+
+    .modal {
+      max-width: 520px;
+      width: 100%;
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+      text-align: left;
+    }
+    .modal h2 { margin: 0 0 10px; }
+    .modal p { margin: 0 0 12px; opacity: 0.9; line-height: 1.35; }
+    .modal .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
   </style>
 </head>
 
@@ -164,7 +188,7 @@
   <h1>TypeShit Daily</h1>
   <p class="hint">
     Middle row makes the word.<br/>
-    Swipe up/down (phone) or scroll wheel (desktop). Submit words to find them all.
+    Swipe up/down (phone) or scroll wheel (desktop). Words auto-submit when you land on them.
   </p>
 
   <div class="board">
@@ -181,31 +205,45 @@
 
   <div id="found"></div>
 
+  <div id="overlay">
+    <div class="modal">
+      <h2>🎉 Solved!</h2>
+      <p id="winText"></p>
+      <div class="row">
+        <button class="secondary" onclick="closeOverlay()">Close</button>
+        <button onclick="resetToday()">Play again (same puzzle)</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // -----------------------
     // Config
     // -----------------------
     const wordLength = 5;
 
-    // Letters that can appear in the *bank* (A–Z)
+    // A–Z bank letters
     const lettersPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
     const ROW_H = 70;          // must match .cell height
-    const ACTIVE_ROW = 1;      // middle row (0,1,2)
-    const RING_LEN = 11;       // how many cells in the scrolling ring
+    const ACTIVE_ROW = 1;      // middle row
+    const RING_LEN = 11;       // scrolling ring size
 
-    // Controls the *bank size* per column (TypeShift-like)
-    const LETTERS_PER_COL = 5; // <- change this (4 easier, 6 harder)
+    // Bank size per column (difficulty knob)
+    const LETTERS_PER_COL = 5; // 4 easier, 6 harder
 
     const SWIPE_THRESHOLD_PX = 18;
     const WHEEL_COOLDOWN_MS = 110;
 
-    // Desired solution count range (tune these)
+    // Target solution range for daily generation (TypeShift-like)
     const TARGET_MIN_SOLUTIONS = 8;
     const TARGET_MAX_SOLUTIONS = 25;
 
-    // How many seed words to sample to build letter banks (more seeds => more overlap/solutions)
+    // More seeds => richer overlap => more solutions
     const SEED_WORD_COUNT = 12;
+
+    // Auto-submit debounce
+    const AUTO_SUBMIT_COOLDOWN_MS = 220;
 
     // -----------------------
     // DOM
@@ -215,23 +253,29 @@
     const statusEl = document.getElementById("status");
     const foundEl = document.getElementById("found");
 
+    const overlayEl = document.getElementById("overlay");
+    const winTextEl = document.getElementById("winText");
+
     // -----------------------
-    // Game state
+    // State
     // -----------------------
-    // Each column: { ring: string[], offset: number, strip: HTMLElement, bankEl: HTMLElement }
+    // Each column: { ring, offset, strip, bankEl }
     const cols = [];
 
-    let DICT_LIST = [];         // dictionary words (lowercase)
-    let DICT_SET = new Set();   // fast lookup
-    let COL_SETS = [];          // per-position Sets of uppercase letters (the banks)
-    let SOLUTIONS = new Set();  // all valid words for today (lowercase)
-    let FOUND = new Set();      // found words (lowercase)
+    let DICT_LIST = [];
+    let DICT_SET = new Set();
+
+    let COL_SETS = [];         // banks: Sets of uppercase letters
+    let SOLUTIONS = new Set(); // all valid words for today
+    let FOUND = new Set();     // player found words
+
+    let lastAutoWord = "";
+    let lastAutoAt = 0;
 
     // -----------------------
     // Daily seed helpers
     // -----------------------
     function dayKeyPT() {
-      // Daily rollover uses Pacific time
       const fmt = new Intl.DateTimeFormat("en-CA", {
         timeZone: "America/Los_Angeles",
         year: "numeric",
@@ -241,9 +285,12 @@
       return fmt.format(new Date()); // YYYY-MM-DD
     }
 
+    function storageKey() {
+      return `typeshit|${dayKeyPT()}|len${wordLength}|bank${LETTERS_PER_COL}`;
+    }
+
     function hashStringToUint32(str) {
-      // FNV-1a 32-bit
-      let h = 2166136261;
+      let h = 2166136261; // FNV-1a
       for (let i = 0; i < str.length; i++) {
         h ^= str.charCodeAt(i);
         h = Math.imul(h, 16777619);
@@ -274,13 +321,23 @@
       resultEl.textContent = "Current: " + currentWord().toUpperCase();
     }
 
+    function remainingCount() {
+      return Math.max(0, SOLUTIONS.size - FOUND.size);
+    }
+
+    function updateStatus() {
+      if (!SOLUTIONS.size) return;
+      statusEl.textContent =
+        `Daily ${dayKeyPT()} • Banks: ${LETTERS_PER_COL}/col • Found ${FOUND.size}/${SOLUTIONS.size} • Remaining: ${remainingCount()}`;
+    }
+
     function renderFound() {
       const found = Array.from(FOUND).sort();
       const total = SOLUTIONS.size;
 
       const header = `
         <div style="opacity:.85; margin-bottom:6px;">
-          Found ${found.length} / ${total}
+          Found ${found.length} / ${total} • Remaining: ${Math.max(0, total - found.length)}
         </div>
       `;
 
@@ -288,7 +345,7 @@
         ? `<div class="pillwrap">
              ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
            </div>`
-        : `<div style="opacity:.7;">No words found yet. Try swiping and submitting.</div>`;
+        : `<div style="opacity:.7;">No words found yet. Swipe/scroll and land on words.</div>`;
 
       foundEl.innerHTML = header + body;
     }
@@ -300,6 +357,70 @@
         bankEl.style.gridTemplateColumns = `repeat(${bank.length}, 1fr)`;
         bankEl.innerHTML = bank.map(ch => `<div class="b">${ch}</div>`).join("");
       }
+    }
+
+    function openOverlay() {
+      winTextEl.textContent = `You found all ${SOLUTIONS.size} words for ${dayKeyPT()}.`;
+      overlayEl.classList.add("show");
+    }
+    function closeOverlay() {
+      overlayEl.classList.remove("show");
+    }
+    window.closeOverlay = closeOverlay;
+
+    // -----------------------
+    // Persistence
+    // -----------------------
+    function saveProgress() {
+      try {
+        const data = {
+          date: dayKeyPT(),
+          offsets: cols.map(c => c.offset),
+          found: Array.from(FOUND)
+        };
+        localStorage.setItem(storageKey(), JSON.stringify(data));
+      } catch (e) {
+        // ignore (private mode / storage full)
+      }
+    }
+
+    function loadProgress() {
+      try {
+        const raw = localStorage.getItem(storageKey());
+        if (!raw) return false;
+
+        const data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.offsets) || !Array.isArray(data.found)) return false;
+        if (data.offsets.length !== wordLength) return false;
+
+        // Restore offsets
+        for (let i = 0; i < wordLength; i++) {
+          cols[i].offset = ((data.offsets[i] ?? 0) % cols[i].ring.length + cols[i].ring.length) % cols[i].ring.length;
+          render(i, false);
+        }
+
+        // Restore found (only keep words that are actually solutions today)
+        FOUND = new Set(
+          data.found
+            .map(w => String(w).toLowerCase())
+            .filter(w => SOLUTIONS.has(w))
+        );
+
+        renderFound();
+        updateStatus();
+        showCurrentWord();
+
+        // If already completed, show overlay
+        if (SOLUTIONS.size > 0 && FOUND.size === SOLUTIONS.size) openOverlay();
+
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function clearProgress() {
+      try { localStorage.removeItem(storageKey()); } catch (e) {}
     }
 
     // -----------------------
@@ -327,13 +448,11 @@
     // Wheel building
     // -----------------------
     function buildColumn(i) {
-      // Outer wrapper so we can place the letter bank above the wheel
       const wrap = document.createElement("div");
       wrap.className = "colwrap";
 
       const bank = document.createElement("div");
       bank.className = "bank";
-      bank.innerHTML = ""; // will be filled after puzzle generation
 
       const col = document.createElement("div");
       col.className = "column";
@@ -355,14 +474,13 @@
 
       wheel.appendChild(strip);
       col.appendChild(wheel);
-
       wrap.appendChild(bank);
       wrap.appendChild(col);
       columnsDiv.appendChild(wrap);
 
       cols[i] = { ring, offset: 0, strip, bankEl: bank };
 
-      // Desktop: scroll wheel
+      // Desktop: mouse wheel
       let wheelLocked = false;
       col.addEventListener("wheel", (e) => {
         e.preventDefault();
@@ -375,7 +493,7 @@
         setTimeout(() => (wheelLocked = false), WHEEL_COOLDOWN_MS);
       }, { passive: false });
 
-      // Mobile/Touch: swipe up/down
+      // Mobile/Touch: swipe
       let startY = null;
       let active = false;
 
@@ -387,8 +505,8 @@
 
       col.addEventListener("pointermove", (e) => {
         if (!active || startY === null) return;
-
         const dy = e.clientY - startY;
+
         if (dy <= -SWIPE_THRESHOLD_PX) {
           shift(i, +1);
           startY = e.clientY;
@@ -401,7 +519,7 @@
       col.addEventListener("pointerup", () => { active = false; startY = null; });
       col.addEventListener("pointercancel", () => { active = false; startY = null; });
 
-      // Tap/click: move down one
+      // Tap/click
       col.addEventListener("click", () => shift(i, +1));
 
       render(i, false);
@@ -421,31 +539,31 @@
       c.offset = (c.offset + dir + n) % n;
       render(i, true);
       showCurrentWord();
+
+      autoSubmitIfValid();
+      saveProgress();
     }
 
     // -----------------------
-    // Daily puzzle generation (TypeShift-style)
+    // Daily puzzle generation
     // -----------------------
     function buildDailyColumnSets(rng) {
-      const sets = Array.from({ length: wordLength }, () => new Set());
+      let sets = Array.from({ length: wordLength }, () => new Set());
 
-      // Seed with letters from sampled words for solvability + richer overlap
+      // seed with dictionary letters
       for (let s = 0; s < SEED_WORD_COUNT; s++) {
         const w = DICT_LIST[Math.floor(rng() * DICT_LIST.length)];
         for (let i = 0; i < wordLength; i++) sets[i].add(w[i].toUpperCase());
       }
 
-      // Expand or trim each set to exactly LETTERS_PER_COL
+      // expand/trim to exactly LETTERS_PER_COL
       for (let i = 0; i < wordLength; i++) {
-        // Expand up to size
         while (sets[i].size < LETTERS_PER_COL) {
           sets[i].add(lettersPool[Math.floor(rng() * lettersPool.length)]);
         }
 
-        // If we seeded too many unique letters, deterministically trim
         if (sets[i].size > LETTERS_PER_COL) {
           const arr = Array.from(sets[i]);
-          // Shuffle with rng, then take first LETTERS_PER_COL
           for (let a = arr.length - 1; a > 0; a--) {
             const j = Math.floor(rng() * (a + 1));
             [arr[a], arr[j]] = [arr[j], arr[a]];
@@ -471,19 +589,16 @@
 
     function applySetsToWheels(sets, rng) {
       for (let i = 0; i < wordLength; i++) {
-        const allowed = Array.from(sets[i]); // uppercase letters
+        const allowed = Array.from(sets[i]); // uppercase
         const c = cols[i];
 
-        // Fill ring with allowed letters
         for (let k = 0; k < c.ring.length; k++) {
           c.ring[k] = allowed[Math.floor(rng() * allowed.length)];
         }
 
-        // Update DOM cells
         const cells = c.strip.querySelectorAll(".cell");
         for (let k = 0; k < c.ring.length; k++) cells[k].textContent = c.ring[k];
 
-        // Random start offset
         c.offset = Math.floor(rng() * c.ring.length);
         render(i, false);
       }
@@ -496,35 +611,69 @@
       let sets = null;
       let sols = null;
 
-      // Try multiple attempts (still deterministic because rng advances)
-      for (let tries = 0; tries < 30; tries++) {
+      for (let tries = 0; tries < 40; tries++) {
         sets = buildDailyColumnSets(rng);
         sols = computeSolutionsFromSets(sets);
-
         if (sols.size >= TARGET_MIN_SOLUTIONS && sols.size <= TARGET_MAX_SOLUTIONS) break;
       }
 
       COL_SETS = sets;
       SOLUTIONS = sols;
 
-      // Update banks first (visual)
       renderBanks(COL_SETS);
-
-      // Apply banks to wheels
       applySetsToWheels(COL_SETS, rng);
 
       FOUND = new Set();
+      lastAutoWord = "";
+      lastAutoAt = 0;
+
       renderFound();
-
-      statusEl.textContent =
-        `Daily ${dayKeyPT()} • Banks: ${LETTERS_PER_COL} letters/col • Solutions: ${SOLUTIONS.size}`;
-
+      updateStatus();
       showCurrentWord();
+
+      // Try to restore saved progress after puzzle is built
+      const restored = loadProgress();
+      if (!restored) {
+        saveProgress();
+      }
     }
 
     // -----------------------
-    // Gameplay
+    // Auto-submit + submit
     // -----------------------
+    function checkWin() {
+      if (SOLUTIONS.size > 0 && FOUND.size === SOLUTIONS.size) {
+        updateStatus();
+        renderFound();
+        openOverlay();
+      }
+    }
+
+    function autoSubmitIfValid() {
+      if (!SOLUTIONS.size) return;
+
+      const now = Date.now();
+      if (now - lastAutoAt < AUTO_SUBMIT_COOLDOWN_MS) return;
+
+      const w = currentWord();
+
+      if (!SOLUTIONS.has(w)) return;
+      if (FOUND.has(w)) return;
+
+      // prevent rapid repeats
+      if (w === lastAutoWord && now - lastAutoAt < 1000) return;
+
+      FOUND.add(w);
+      lastAutoWord = w;
+      lastAutoAt = now;
+
+      resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+      renderFound();
+      updateStatus();
+      saveProgress();
+      checkWin();
+    }
+
     function submitWord() {
       const w = currentWord();
 
@@ -533,7 +682,6 @@
         return;
       }
 
-      // Must be a real dictionary word AND part of today's solutions
       if (!DICT_SET.has(w) || !SOLUTIONS.has(w)) {
         resultEl.textContent = `❌ Not valid today: ${w.toUpperCase()}`;
         return;
@@ -547,14 +695,15 @@
       FOUND.add(w);
       resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
       renderFound();
-
-      if (FOUND.size === SOLUTIONS.size) {
-        resultEl.textContent = `🎉 You found them all! (${FOUND.size})`;
-      }
+      updateStatus();
+      saveProgress();
+      checkWin();
     }
     window.submitWord = submitWord;
 
     function resetToday() {
+      closeOverlay();
+      clearProgress();     // wipe saved offsets + found
       generateDailyPuzzle(); // same seed => same puzzle
       resultEl.textContent = "";
     }
@@ -564,11 +713,10 @@
     // Init
     // -----------------------
     async function init() {
-      // Build wheels + banks
+      // Build columns first
       for (let i = 0; i < wordLength; i++) buildColumn(i);
       showCurrentWord();
 
-      // Load dictionary then generate daily puzzle
       try {
         await loadDictionary();
         if (DICT_LIST.length === 0) {
