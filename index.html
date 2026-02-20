@@ -19,13 +19,48 @@
     .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
     #status { opacity: 0.8; margin-top: 8px; }
 
+    .board {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
     .columns {
       display: flex;
       justify-content: center;
       gap: 14px;
-      margin: 18px 0 10px;
+      margin: 10px 0 6px;
     }
 
+    .colwrap {
+      width: 84px;
+    }
+
+    /* Letter bank shown above wheel */
+    .bank {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+      justify-items: center;
+      align-items: center;
+      opacity: 0.95;
+    }
+
+    .bank .b {
+      width: 100%;
+      padding: 6px 0;
+      border-radius: 10px;
+      background: #1a1a1a;
+      border: 1px solid #2e2e2e;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      font-size: 14px;
+    }
+
+    /* Column interaction area */
     .column {
       width: 84px;
       cursor: pointer;
@@ -71,13 +106,13 @@
       align-items: center;
       justify-content: center;
       font-size: 44px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
       color: #f5f5f5;
     }
 
     .actions {
-      margin-top: 14px;
+      margin-top: 10px;
       display: flex;
       justify-content: center;
       gap: 10px;
@@ -97,13 +132,13 @@
     button:hover { filter: brightness(1.03); }
 
     #result {
-      margin-top: 14px;
+      margin-top: 12px;
       font-size: 20px;
       min-height: 28px;
     }
 
     #found {
-      max-width: 700px;
+      max-width: 760px;
       margin: 14px auto 0;
       text-align: left;
     }
@@ -119,7 +154,7 @@
       border: 1px solid #333;
       padding: 6px 10px;
       border-radius: 999px;
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: 0.4px;
     }
   </style>
@@ -132,15 +167,18 @@
     Swipe up/down (phone) or scroll wheel (desktop). Submit words to find them all.
   </p>
 
-  <div class="columns" id="columns"></div>
+  <div class="board">
+    <div class="columns" id="columns"></div>
 
-  <div class="actions">
-    <button onclick="submitWord()">Submit word</button>
-    <button class="secondary" onclick="resetToday()">Reset</button>
+    <div class="actions">
+      <button onclick="submitWord()">Submit word</button>
+      <button class="secondary" onclick="resetToday()">Reset</button>
+    </div>
+
+    <p id="result"></p>
+    <div id="status"></div>
   </div>
 
-  <p id="result"></p>
-  <div id="status"></div>
   <div id="found"></div>
 
   <script>
@@ -149,12 +187,15 @@
     // -----------------------
     const wordLength = 5;
 
-    // Letters that can appear in columns (A–Z is fine too)
+    // Letters that can appear in the *bank* (A–Z)
     const lettersPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
     const ROW_H = 70;          // must match .cell height
     const ACTIVE_ROW = 1;      // middle row (0,1,2)
     const RING_LEN = 11;       // how many cells in the scrolling ring
+
+    // Controls the *bank size* per column (TypeShift-like)
+    const LETTERS_PER_COL = 5; // <- change this (4 easier, 6 harder)
 
     const SWIPE_THRESHOLD_PX = 18;
     const WHEEL_COOLDOWN_MS = 110;
@@ -163,11 +204,7 @@
     const TARGET_MIN_SOLUTIONS = 8;
     const TARGET_MAX_SOLUTIONS = 25;
 
-    // Column letter-set size range (tune these)
-    const MIN_LETTERS_PER_COL = 5;
-    const MAX_LETTERS_PER_COL = 7;
-
-    // How many seed words to sample to build the letter sets (tune this)
+    // How many seed words to sample to build letter banks (more seeds => more overlap/solutions)
     const SEED_WORD_COUNT = 12;
 
     // -----------------------
@@ -181,10 +218,12 @@
     // -----------------------
     // Game state
     // -----------------------
-    const cols = [];            // wheel columns: { ring, offset, strip }
+    // Each column: { ring: string[], offset: number, strip: HTMLElement, bankEl: HTMLElement }
+    const cols = [];
+
     let DICT_LIST = [];         // dictionary words (lowercase)
     let DICT_SET = new Set();   // fast lookup
-    let COL_SETS = [];          // per-position Sets of uppercase letters
+    let COL_SETS = [];          // per-position Sets of uppercase letters (the banks)
     let SOLUTIONS = new Set();  // all valid words for today (lowercase)
     let FOUND = new Set();      // found words (lowercase)
 
@@ -192,7 +231,7 @@
     // Daily seed helpers
     // -----------------------
     function dayKeyPT() {
-      // Daily rollover uses Pacific time (your timezone)
+      // Daily rollover uses Pacific time
       const fmt = new Intl.DateTimeFormat("en-CA", {
         timeZone: "America/Los_Angeles",
         year: "numeric",
@@ -224,6 +263,13 @@
     // -----------------------
     // UI helpers
     // -----------------------
+    function currentWord() {
+      return cols.map(c => {
+        const idx = (c.offset + ACTIVE_ROW) % c.ring.length;
+        return c.ring[idx];
+      }).join("").toLowerCase();
+    }
+
     function showCurrentWord() {
       resultEl.textContent = "Current: " + currentWord().toUpperCase();
     }
@@ -245,6 +291,15 @@
         : `<div style="opacity:.7;">No words found yet. Try swiping and submitting.</div>`;
 
       foundEl.innerHTML = header + body;
+    }
+
+    function renderBanks(sets) {
+      for (let i = 0; i < wordLength; i++) {
+        const bank = Array.from(sets[i]).sort();
+        const bankEl = cols[i].bankEl;
+        bankEl.style.gridTemplateColumns = `repeat(${bank.length}, 1fr)`;
+        bankEl.innerHTML = bank.map(ch => `<div class="b">${ch}</div>`).join("");
+      }
     }
 
     // -----------------------
@@ -272,7 +327,13 @@
     // Wheel building
     // -----------------------
     function buildColumn(i) {
-      const ring = Array.from({ length: RING_LEN }, () => lettersPool[0]); // placeholder
+      // Outer wrapper so we can place the letter bank above the wheel
+      const wrap = document.createElement("div");
+      wrap.className = "colwrap";
+
+      const bank = document.createElement("div");
+      bank.className = "bank";
+      bank.innerHTML = ""; // will be filled after puzzle generation
 
       const col = document.createElement("div");
       col.className = "column";
@@ -283,6 +344,8 @@
       const strip = document.createElement("div");
       strip.className = "strip";
 
+      const ring = Array.from({ length: RING_LEN }, () => "A"); // placeholder
+
       ring.forEach(ch => {
         const cell = document.createElement("div");
         cell.className = "cell";
@@ -292,9 +355,12 @@
 
       wheel.appendChild(strip);
       col.appendChild(wheel);
-      columnsDiv.appendChild(col);
 
-      cols[i] = { ring, offset: 0, strip };
+      wrap.appendChild(bank);
+      wrap.appendChild(col);
+      columnsDiv.appendChild(wrap);
+
+      cols[i] = { ring, offset: 0, strip, bankEl: bank };
 
       // Desktop: scroll wheel
       let wheelLocked = false;
@@ -357,34 +423,34 @@
       showCurrentWord();
     }
 
-    function currentWord() {
-      return cols.map(c => {
-        const idx = (c.offset + ACTIVE_ROW) % c.ring.length;
-        return c.ring[idx];
-      }).join("").toLowerCase();
-    }
-
     // -----------------------
     // Daily puzzle generation (TypeShift-style)
     // -----------------------
     function buildDailyColumnSets(rng) {
-      const seeds = [];
-      for (let i = 0; i < SEED_WORD_COUNT; i++) {
-        seeds.push(DICT_LIST[Math.floor(rng() * DICT_LIST.length)]);
-      }
-
       const sets = Array.from({ length: wordLength }, () => new Set());
 
-      // Add seed letters at each position
-      for (const w of seeds) {
+      // Seed with letters from sampled words for solvability + richer overlap
+      for (let s = 0; s < SEED_WORD_COUNT; s++) {
+        const w = DICT_LIST[Math.floor(rng() * DICT_LIST.length)];
         for (let i = 0; i < wordLength; i++) sets[i].add(w[i].toUpperCase());
       }
 
-      // Expand sets to desired size range
+      // Expand or trim each set to exactly LETTERS_PER_COL
       for (let i = 0; i < wordLength; i++) {
-        const targetSize = MIN_LETTERS_PER_COL + Math.floor(rng() * (MAX_LETTERS_PER_COL - MIN_LETTERS_PER_COL + 1));
-        while (sets[i].size < targetSize) {
+        // Expand up to size
+        while (sets[i].size < LETTERS_PER_COL) {
           sets[i].add(lettersPool[Math.floor(rng() * lettersPool.length)]);
+        }
+
+        // If we seeded too many unique letters, deterministically trim
+        if (sets[i].size > LETTERS_PER_COL) {
+          const arr = Array.from(sets[i]);
+          // Shuffle with rng, then take first LETTERS_PER_COL
+          for (let a = arr.length - 1; a > 0; a--) {
+            const j = Math.floor(rng() * (a + 1));
+            [arr[a], arr[j]] = [arr[j], arr[a]];
+          }
+          sets[i] = new Set(arr.slice(0, LETTERS_PER_COL));
         }
       }
 
@@ -430,22 +496,29 @@
       let sets = null;
       let sols = null;
 
-      // Try a few times to get a fun # of solutions
-      for (let tries = 0; tries < 20; tries++) {
+      // Try multiple attempts (still deterministic because rng advances)
+      for (let tries = 0; tries < 30; tries++) {
         sets = buildDailyColumnSets(rng);
         sols = computeSolutionsFromSets(sets);
+
         if (sols.size >= TARGET_MIN_SOLUTIONS && sols.size <= TARGET_MAX_SOLUTIONS) break;
       }
 
       COL_SETS = sets;
       SOLUTIONS = sols;
 
+      // Update banks first (visual)
+      renderBanks(COL_SETS);
+
+      // Apply banks to wheels
       applySetsToWheels(COL_SETS, rng);
 
       FOUND = new Set();
       renderFound();
 
-      statusEl.textContent = `Daily ${dayKeyPT()} • Solutions: ${SOLUTIONS.size}`;
+      statusEl.textContent =
+        `Daily ${dayKeyPT()} • Banks: ${LETTERS_PER_COL} letters/col • Solutions: ${SOLUTIONS.size}`;
+
       showCurrentWord();
     }
 
@@ -482,8 +555,7 @@
     window.submitWord = submitWord;
 
     function resetToday() {
-      // Just re-apply the same day's generation (same seed => same puzzle)
-      generateDailyPuzzle();
+      generateDailyPuzzle(); // same seed => same puzzle
       resultEl.textContent = "";
     }
     window.resetToday = resetToday;
@@ -492,7 +564,7 @@
     // Init
     // -----------------------
     async function init() {
-      // Build wheels
+      // Build wheels + banks
       for (let i = 0; i < wordLength; i++) buildColumn(i);
       showCurrentWord();
 
