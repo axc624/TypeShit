@@ -17,7 +17,7 @@
 
     h1 { margin: 0 0 8px; font-size: 34px; }
     .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
-    #status { opacity: 0.85; margin-top: 8px; }
+    #status { opacity: 0.9; margin-top: 8px; min-height: 22px; }
 
     .columns {
       display: flex;
@@ -58,6 +58,7 @@
     .strip {
       position: absolute;
       width: 100%;
+      /* slower/smoother */
       transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
       will-change: transform;
     }
@@ -73,6 +74,14 @@
       color: #f5f5f5;
     }
 
+    .actions {
+      margin-top: 8px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     button {
       padding: 10px 16px;
       font-size: 18px;
@@ -81,8 +90,9 @@
       background: #4CAF50;
       color: white;
       cursor: pointer;
-      margin-top: 10px;
     }
+    button.secondary { background: #2a2a2a; border: 1px solid #3a3a3a; }
+    button:hover { filter: brightness(1.03); }
 
     #result {
       margin-top: 12px;
@@ -114,10 +124,10 @@
     @media (max-width: 430px) {
       .columns { gap: 10px; }
       .column { width: 64px; }
-      .wheel { height: 168px; }
+      .wheel { height: 168px; border-radius: 12px; }
       .wheel::after { top: 56px; height: 56px; }
       .cell { height: 56px; font-size: 34px; }
-      button { font-size: 16px; }
+      button { font-size: 16px; padding: 10px 14px; }
     }
 
     /* Win overlay */
@@ -128,245 +138,559 @@
       align-items: center;
       justify-content: center;
       background: rgba(0,0,0,0.65);
+      padding: 18px;
+      z-index: 999;
     }
-
     #overlay.show { display: flex; }
 
     .modal {
       background: #141414;
       border: 1px solid #2a2a2a;
       border-radius: 16px;
-      padding: 20px;
-      max-width: 400px;
-      width: 90%;
+      padding: 18px;
+      max-width: 520px;
+      width: 100%;
+      text-align: left;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.6);
     }
+    .modal h2 { margin: 0 0 10px; }
+    .modal p { margin: 0 0 12px; opacity: 0.9; line-height: 1.35; }
+    .modal .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
   </style>
 </head>
 
 <body>
+  <h1>TypeShit Daily</h1>
+  <p class="hint">Swipe/scroll. Middle row makes the word. Landing on a valid word auto-adds it.</p>
 
-<h1>TypeShit Daily</h1>
-<p class="hint">Swipe or scroll. Middle row makes the word.</p>
+  <div class="columns" id="columns"></div>
 
-<div class="columns" id="columns"></div>
-
-<button onclick="submitWord()">Submit</button>
-
-<p id="result"></p>
-<div id="status"></div>
-<div id="found"></div>
-
-<div id="overlay">
-  <div class="modal">
-    <h2>🎉 You Solved It!</h2>
-    <p id="winText"></p>
-    <button onclick="closeOverlay()">Close</button>
+  <div class="actions">
+    <button onclick="submitWord()">Submit</button>
+    <button class="secondary" onclick="resetToday()">Reset</button>
   </div>
-</div>
+
+  <p id="result"></p>
+  <div id="status"></div>
+  <div id="found"></div>
+
+  <div id="overlay">
+    <div class="modal">
+      <h2>🎉 Solved!</h2>
+      <p id="winText"></p>
+      <div class="row">
+        <button class="secondary" onclick="closeOverlay()">Close</button>
+        <button onclick="resetToday()">Play again (same puzzle)</button>
+      </div>
+    </div>
+  </div>
 
 <script>
-const wordLength = 5;
-const lettersPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-let ROW_H = 70;
-const ACTIVE_ROW = 1;
-const RING_LEN = 11;
+  // -----------------------
+  // Config
+  // -----------------------
+  const wordLength = 5;
+  const lettersPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-const TARGET_MIN_SOLUTIONS = 8;
-const TARGET_MAX_SOLUTIONS = 25;
-const SEED_WORD_COUNT = 12;
+  // Reads from CSS so mobile stays aligned
+  let ROW_H = 70;
 
-const columnsDiv = document.getElementById("columns");
-const resultEl = document.getElementById("result");
-const statusEl = document.getElementById("status");
-const foundEl = document.getElementById("found");
-const overlay = document.getElementById("overlay");
-const winText = document.getElementById("winText");
+  const ACTIVE_ROW = 1;
+  const RING_LEN = 11;
 
-const cols = [];
-let DICT_LIST = [];
-let SOLUTIONS = new Set();
-let FOUND = new Set();
+  // Difficulty knobs
+  const LETTERS_PER_COL = 5;        // fewer = easier, more = harder
+  const SEED_WORD_COUNT = 12;       // more seeds => more overlap/solutions
+  const TARGET_MIN_SOLUTIONS = 8;
+  const TARGET_MAX_SOLUTIONS = 25;
 
-function syncRowHeight() {
-  const cell = document.querySelector(".cell");
-  if (cell) ROW_H = cell.getBoundingClientRect().height;
-}
+  // Input feel
+  const SWIPE_THRESHOLD_PX = 18;
+  const WHEEL_COOLDOWN_MS = 110;
 
-function dayKey() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
-}
+  // Auto-submit feel
+  const AUTO_SUBMIT_COOLDOWN_MS = 220;
 
-function hash(str){
-  let h=2166136261;
-  for(let i=0;i<str.length;i++){
-    h^=str.charCodeAt(i);
-    h=Math.imul(h,16777619);
+  // -----------------------
+  // DOM
+  // -----------------------
+  const columnsDiv = document.getElementById("columns");
+  const resultEl = document.getElementById("result");
+  const statusEl = document.getElementById("status");
+  const foundEl = document.getElementById("found");
+
+  const overlayEl = document.getElementById("overlay");
+  const winTextEl = document.getElementById("winText");
+
+  // -----------------------
+  // State
+  // -----------------------
+  // cols[i] = { ring, offset, strip }
+  const cols = [];
+
+  let DICT_LIST = [];
+  let DICT_SET = new Set();
+
+  let SOLUTIONS = new Set();
+  let FOUND = new Set();
+
+  let lastAutoWord = "";
+  let lastAutoAt = 0;
+
+  // -----------------------
+  // Helpers: row height sync
+  // -----------------------
+  function syncRowHeightFromCSS() {
+    const cell = document.querySelector(".cell");
+    if (!cell) return;
+    const h = cell.getBoundingClientRect().height;
+    if (h && h > 0) ROW_H = h;
   }
-  return h>>>0;
-}
 
-function rng(seed){
-  return function(){
-    seed+=0x6D2B79F5;
-    let t=Math.imul(seed^seed>>>15,1|seed);
-    t^=t+Math.imul(t^t>>>7,61|t);
-    return ((t^t>>>14)>>>0)/4294967296;
+  // -----------------------
+  // Helpers: daily seed
+  // -----------------------
+  function dayKeyPT() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date()); // YYYY-MM-DD
   }
-}
 
-function currentWord(){
-  return cols.map(c=>{
-    const idx=(c.offset+ACTIVE_ROW)%c.ring.length;
-    return c.ring[idx];
-  }).join("").toLowerCase();
-}
+  function storageKey() {
+    return `typeshit|${dayKeyPT()}|len${wordLength}|bank${LETTERS_PER_COL}`;
+  }
 
-function render(i){
-  const c=cols[i];
-  c.strip.style.transform=`translateY(-${c.offset*ROW_H}px)`;
-}
-
-function shift(i,dir){
-  const c=cols[i];
-  c.offset=(c.offset+dir+c.ring.length)%c.ring.length;
-  render(i);
-  autoSubmit();
-}
-
-function buildColumn(i){
-  const col=document.createElement("div");
-  col.className="column";
-
-  const wheel=document.createElement("div");
-  wheel.className="wheel";
-
-  const strip=document.createElement("div");
-  strip.className="strip";
-
-  const ring=Array.from({length:RING_LEN},()=> "A");
-
-  ring.forEach(ch=>{
-    const cell=document.createElement("div");
-    cell.className="cell";
-    cell.textContent=ch;
-    strip.appendChild(cell);
-  });
-
-  wheel.appendChild(strip);
-  col.appendChild(wheel);
-  columnsDiv.appendChild(col);
-
-  cols[i]={ring,offset:0,strip};
-
-  col.addEventListener("wheel",e=>{
-    e.preventDefault();
-    shift(i,e.deltaY>0?1:-1);
-  },{passive:false});
-
-  col.addEventListener("click",()=>shift(i,1));
-}
-
-async function loadDictionary(){
-  const res=await fetch("words.txt");
-  const text=await res.text();
-  DICT_LIST=text.split(/\r?\n/)
-    .map(w=>w.trim().toLowerCase())
-    .filter(w=>w.length===wordLength);
-}
-
-function computeSolutions(sets){
-  const sols=new Set();
-  for(const w of DICT_LIST){
-    let ok=true;
-    for(let i=0;i<wordLength;i++){
-      if(!sets[i].has(w[i].toUpperCase())){ok=false;break;}
+  function hashStringToUint32(str) {
+    let h = 2166136261; // FNV-1a 32-bit
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
     }
-    if(ok)sols.add(w);
+    return h >>> 0;
   }
-  return sols;
-}
 
-function generatePuzzle(){
-  const seed=hash("TypeShitDaily|"+dayKey());
-  const random=rng(seed);
+  function mulberry32(seed) {
+    return function () {
+      let t = (seed += 0x6D2B79F5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
 
-  let sets;
-  let sols;
+  // -----------------------
+  // UI
+  // -----------------------
+  function currentWord() {
+    return cols.map(c => {
+      const idx = (c.offset + ACTIVE_ROW) % c.ring.length;
+      return c.ring[idx];
+    }).join("").toLowerCase();
+  }
 
-  for(let t=0;t<40;t++){
-    sets=Array.from({length:wordLength},()=>new Set());
-    for(let s=0;s<SEED_WORD_COUNT;s++){
-      const w=DICT_LIST[Math.floor(random()*DICT_LIST.length)];
-      for(let i=0;i<wordLength;i++)
-        sets[i].add(w[i].toUpperCase());
+  function showCurrentWord() {
+    resultEl.textContent = "Current: " + currentWord().toUpperCase();
+  }
+
+  function remainingCount() {
+    return Math.max(0, SOLUTIONS.size - FOUND.size);
+  }
+
+  function updateStatus() {
+    if (!SOLUTIONS.size) return;
+    statusEl.textContent =
+      `Daily ${dayKeyPT()} • Found ${FOUND.size}/${SOLUTIONS.size} • Remaining: ${remainingCount()}`;
+  }
+
+  function renderFound() {
+    const found = Array.from(FOUND).sort();
+    if (!found.length) {
+      foundEl.innerHTML = `<div style="opacity:.75;">No words found yet.</div>`;
+      return;
     }
-    sols=computeSolutions(sets);
-    if(sols.size>=TARGET_MIN_SOLUTIONS && sols.size<=TARGET_MAX_SOLUTIONS) break;
+    foundEl.innerHTML = `
+      <div style="opacity:.85; margin-bottom:6px;">
+        Found ${found.length} / ${SOLUTIONS.size} • Remaining: ${remainingCount()}
+      </div>
+      <div class="pillwrap">
+        ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
+      </div>
+    `;
   }
 
-  SOLUTIONS=sols;
-  FOUND=new Set();
+  function openOverlay() {
+    winTextEl.textContent = `You found all ${SOLUTIONS.size} words for ${dayKeyPT()}.`;
+    overlayEl.classList.add("show");
+  }
 
-  for(let i=0;i<wordLength;i++){
-    const allowed=[...sets[i]];
-    const c=cols[i];
-    for(let k=0;k<RING_LEN;k++){
-      c.ring[k]=allowed[Math.floor(random()*allowed.length)];
+  function closeOverlay() {
+    overlayEl.classList.remove("show");
+  }
+  window.closeOverlay = closeOverlay;
+
+  // -----------------------
+  // Persistence
+  // -----------------------
+  function saveProgress() {
+    try {
+      const data = {
+        offsets: cols.map(c => c.offset),
+        found: Array.from(FOUND)
+      };
+      localStorage.setItem(storageKey(), JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+
+      if (!data || !Array.isArray(data.offsets) || !Array.isArray(data.found)) return false;
+      if (data.offsets.length !== wordLength) return false;
+
+      for (let i = 0; i < wordLength; i++) {
+        cols[i].offset = ((data.offsets[i] ?? 0) % cols[i].ring.length + cols[i].ring.length) % cols[i].ring.length;
+        render(i, false);
+      }
+
+      FOUND = new Set(
+        data.found
+          .map(w => String(w).toLowerCase())
+          .filter(w => SOLUTIONS.has(w))
+      );
+
+      renderFound();
+      updateStatus();
+      showCurrentWord();
+
+      if (SOLUTIONS.size && FOUND.size === SOLUTIONS.size) openOverlay();
+      return true;
+    } catch (e) {
+      return false;
     }
-    c.offset=Math.floor(random()*RING_LEN);
-    render(i);
   }
 
-  statusEl.textContent=`Daily ${dayKey()} • ${SOLUTIONS.size} words`;
-  renderFound();
-}
+  function clearProgress() {
+    try { localStorage.removeItem(storageKey()); } catch (e) {}
+  }
 
-function autoSubmit(){
-  const w=currentWord();
-  if(SOLUTIONS.has(w) && !FOUND.has(w)){
-    FOUND.add(w);
+  // -----------------------
+  // Dictionary (FIXED)
+  // -----------------------
+  async function loadDictionary() {
+    statusEl.textContent = "Loading words.txt…";
+
+    const res = await fetch("words.txt", { cache: "no-store" });
+    if (!res.ok) throw new Error(`words.txt load failed (${res.status})`);
+
+    const text = await res.text();
+
+    DICT_LIST = text
+      .split(/\r?\n/)
+      .map(w => w.trim().toLowerCase())
+      .filter(w => w && /^[a-z]+$/.test(w) && w.length === wordLength);
+
+    if (DICT_LIST.length === 0) {
+      throw new Error("words.txt loaded but contained 0 valid words for this word length.");
+    }
+
+    DICT_SET = new Set(DICT_LIST);
+
+    statusEl.textContent = `Loaded ${DICT_LIST.length.toLocaleString()} words`;
+  }
+
+  // -----------------------
+  // Build wheels
+  // -----------------------
+  function buildColumn(i) {
+    const col = document.createElement("div");
+    col.className = "column";
+
+    const wheel = document.createElement("div");
+    wheel.className = "wheel";
+
+    const strip = document.createElement("div");
+    strip.className = "strip";
+
+    const ring = Array.from({ length: RING_LEN }, () => "A");
+
+    for (const ch of ring) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.textContent = ch;
+      strip.appendChild(cell);
+    }
+
+    wheel.appendChild(strip);
+    col.appendChild(wheel);
+    columnsDiv.appendChild(col);
+
+    cols[i] = { ring, offset: 0, strip };
+
+    // Desktop wheel
+    let wheelLocked = false;
+    col.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if (wheelLocked) return;
+      wheelLocked = true;
+      const dir = e.deltaY > 0 ? +1 : -1;
+      shift(i, dir);
+      setTimeout(() => wheelLocked = false, WHEEL_COOLDOWN_MS);
+    }, { passive: false });
+
+    // Touch swipe
+    let startY = null;
+    let active = false;
+
+    col.addEventListener("pointerdown", (e) => {
+      active = true;
+      startY = e.clientY;
+      col.setPointerCapture?.(e.pointerId);
+    });
+
+    col.addEventListener("pointermove", (e) => {
+      if (!active || startY === null) return;
+      const dy = e.clientY - startY;
+
+      if (dy <= -SWIPE_THRESHOLD_PX) {
+        shift(i, +1);
+        startY = e.clientY;
+      } else if (dy >= SWIPE_THRESHOLD_PX) {
+        shift(i, -1);
+        startY = e.clientY;
+      }
+    });
+
+    col.addEventListener("pointerup", () => { active = false; startY = null; });
+    col.addEventListener("pointercancel", () => { active = false; startY = null; });
+
+    // Tap
+    col.addEventListener("click", () => shift(i, +1));
+
+    render(i, false);
+  }
+
+  function render(i, animate = true) {
+    const c = cols[i];
+    c.strip.style.transition = animate
+      ? "transform 420ms cubic-bezier(.22,1.2,.36,1)"
+      : "none";
+    c.strip.style.transform = `translateY(-${c.offset * ROW_H}px)`;
+  }
+
+  function shift(i, dir) {
+    const c = cols[i];
+    const n = c.ring.length;
+    c.offset = (c.offset + dir + n) % n;
+    render(i, true);
+    showCurrentWord();
+    autoSubmitIfValid();
+    saveProgress();
+  }
+
+  // -----------------------
+  // Puzzle generation (FIXED: never allow empty sets)
+  // -----------------------
+  function buildColumnSetsFromSeeds(rng) {
+    // Start sets with letters from random dictionary words (guarantees solvable)
+    let sets = Array.from({ length: wordLength }, () => new Set());
+
+    for (let s = 0; s < SEED_WORD_COUNT; s++) {
+      const w = DICT_LIST[Math.floor(rng() * DICT_LIST.length)];
+      for (let i = 0; i < wordLength; i++) sets[i].add(w[i].toUpperCase());
+    }
+
+    // Expand/trim each set to exactly LETTERS_PER_COL
+    for (let i = 0; i < wordLength; i++) {
+      while (sets[i].size < LETTERS_PER_COL) {
+        sets[i].add(lettersPool[Math.floor(rng() * lettersPool.length)]);
+      }
+      if (sets[i].size > LETTERS_PER_COL) {
+        const arr = Array.from(sets[i]);
+        for (let a = arr.length - 1; a > 0; a--) {
+          const j = Math.floor(rng() * (a + 1));
+          [arr[a], arr[j]] = [arr[j], arr[a]];
+        }
+        sets[i] = new Set(arr.slice(0, LETTERS_PER_COL));
+      }
+    }
+
+    // Safety: never empty
+    for (let i = 0; i < wordLength; i++) {
+      if (sets[i].size === 0) sets[i].add("A");
+    }
+
+    return sets;
+  }
+
+  function computeSolutions(sets) {
+    const sols = new Set();
+    for (const w of DICT_LIST) {
+      let ok = true;
+      for (let i = 0; i < wordLength; i++) {
+        if (!sets[i].has(w[i].toUpperCase())) { ok = false; break; }
+      }
+      if (ok) sols.add(w);
+    }
+    return sols;
+  }
+
+  function applySetsToWheels(sets, rng) {
+    for (let i = 0; i < wordLength; i++) {
+      const allowed = Array.from(sets[i]);
+      const c = cols[i];
+
+      // allowed should never be empty, but guard anyway:
+      const safeAllowed = allowed.length ? allowed : ["A"];
+
+      for (let k = 0; k < RING_LEN; k++) {
+        c.ring[k] = safeAllowed[Math.floor(rng() * safeAllowed.length)];
+      }
+
+      // update DOM cells
+      const cells = c.strip.querySelectorAll(".cell");
+      for (let k = 0; k < RING_LEN; k++) cells[k].textContent = c.ring[k];
+
+      c.offset = Math.floor(rng() * RING_LEN);
+      render(i, false);
+    }
+  }
+
+  function generateDailyPuzzle() {
+    const seed = hashStringToUint32("TypeShitDaily|" + dayKeyPT());
+    const rng = mulberry32(seed);
+
+    let sets = null;
+    let sols = null;
+
+    // Try a few times to hit the desired solution range
+    for (let tries = 0; tries < 50; tries++) {
+      sets = buildColumnSetsFromSeeds(rng);
+      sols = computeSolutions(sets);
+      if (sols.size >= TARGET_MIN_SOLUTIONS && sols.size <= TARGET_MAX_SOLUTIONS) break;
+    }
+
+    // If still weirdly empty, show message (shouldn't happen if dictionary loaded)
+    if (!sols || sols.size === 0) {
+      statusEl.textContent = "Could not generate puzzle (no solutions). Check words.txt contains many 5-letter words.";
+      return;
+    }
+
+    SOLUTIONS = sols;
+    FOUND = new Set();
+    lastAutoWord = "";
+    lastAutoAt = 0;
+
+    applySetsToWheels(sets, rng);
+
     renderFound();
-    if(FOUND.size===SOLUTIONS.size){
-      winText.textContent=`All ${SOLUTIONS.size} words found!`;
-      overlay.classList.add("show");
+    updateStatus();
+    showCurrentWord();
+
+    // Restore saved progress if any
+    const restored = loadProgress();
+    if (!restored) saveProgress();
+  }
+
+  // -----------------------
+  // Auto-submit + submit
+  // -----------------------
+  function checkWin() {
+    if (SOLUTIONS.size > 0 && FOUND.size === SOLUTIONS.size) {
+      updateStatus();
+      renderFound();
+      openOverlay();
     }
   }
-}
 
-function submitWord(){
-  autoSubmit();
-}
+  function autoSubmitIfValid() {
+    if (!SOLUTIONS.size) return;
 
-function renderFound(){
-  const words=[...FOUND].sort();
-  foundEl.innerHTML=words.length
-    ? `<div class="pillwrap">${words.map(w=>`<span class="pill">${w.toUpperCase()}</span>`).join("")}</div>`
-    : "";
-}
+    const now = Date.now();
+    if (now - lastAutoAt < AUTO_SUBMIT_COOLDOWN_MS) return;
 
-function closeOverlay(){
-  overlay.classList.remove("show");
-}
+    const w = currentWord();
+    if (!SOLUTIONS.has(w)) return;
+    if (FOUND.has(w)) return;
+    if (w === lastAutoWord && now - lastAutoAt < 1000) return;
 
-window.closeOverlay=closeOverlay;
+    FOUND.add(w);
+    lastAutoWord = w;
+    lastAutoAt = now;
 
-async function init(){
-  for(let i=0;i<wordLength;i++) buildColumn(i);
-  syncRowHeight();
-  window.addEventListener("resize",()=>{
-    syncRowHeight();
-    cols.forEach((_,i)=>render(i));
-  });
-  await loadDictionary();
-  generatePuzzle();
-}
+    resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
 
-init();
+  function submitWord() {
+    // manual submit just triggers the same logic
+    const w = currentWord();
+
+    if (!SOLUTIONS.size) {
+      resultEl.textContent = "Puzzle not ready yet.";
+      return;
+    }
+
+    if (!DICT_SET.has(w) || !SOLUTIONS.has(w)) {
+      resultEl.textContent = `❌ Not valid today: ${w.toUpperCase()}`;
+      return;
+    }
+
+    if (FOUND.has(w)) {
+      resultEl.textContent = `↩️ Already found: ${w.toUpperCase()}`;
+      return;
+    }
+
+    FOUND.add(w);
+    resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
+  window.submitWord = submitWord;
+
+  function resetToday() {
+    closeOverlay();
+    clearProgress();
+    generateDailyPuzzle(); // same seed => same puzzle
+    resultEl.textContent = "";
+  }
+  window.resetToday = resetToday;
+
+  // -----------------------
+  // Init
+  // -----------------------
+  async function init() {
+    // Build columns first so .cell exists for measuring
+    for (let i = 0; i < wordLength; i++) buildColumn(i);
+
+    syncRowHeightFromCSS();
+    window.addEventListener("resize", () => {
+      syncRowHeightFromCSS();
+      for (let i = 0; i < wordLength; i++) render(i, false);
+    });
+
+    showCurrentWord();
+
+    try {
+      await loadDictionary();
+      generateDailyPuzzle();
+    } catch (err) {
+      statusEl.textContent = "❌ " + (err?.message || "Failed to load words.txt");
+      console.error(err);
+    }
+  }
+
+  init();
 </script>
 
 </body>
