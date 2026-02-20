@@ -16,31 +16,57 @@
 .columns {
   display: flex;
   justify-content: center;
-  gap: 15px;
+  gap: 14px;
   margin: 30px 0;
 }
 
 .column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 40px;
-  background: #222;
-  padding: 15px;
-  border-radius: 10px;
+  width: 80px;
   cursor: pointer;
-  width: 70px;
-  gap: 10px;
+  user-select: none;
+  touch-action: none;
 }
 
-.column div {
-  background: #333;
-  padding: 10px;
+.wheel {
+  position: relative;
+  height: 210px;            /* 3 rows x 70px */
+  overflow: hidden;
+  border-radius: 14px;
+  background: #1b1b1b;
+  border: 1px solid #333;
+}
+
+/* Highlight the middle row */
+.wheel::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  top: 70px;                /* middle row starts at 70 */
+  height: 70px;
+  background: rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255,255,255,0.15);
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  pointer-events: none;
+}
+
+.strip {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 100%;
-  border-radius: 6px;
+  transition: transform 280ms cubic-bezier(.22,1.2,.36,1);
+  will-change: transform;
 }
 
-.column:hover {
+.cell {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44px;
+  font-weight: 700;
+  color: #f5f5f5;
+}
   background: #333;
 }
 </head>
@@ -74,49 +100,142 @@ button:hover {
   
 <script>
   const wordLength = 5;
-  const letters = ["C","A","T","D","O","G","R","E","N"];
+  const lettersPool = ["C","A","T","D","O","G","R","E","N","S","L","I","P","H","U"];
+  const ROW_H = 70;       // must match .cell height in CSS
+  const ACTIVE_ROW = 1;   // middle row (0,1,2)
+
   const columnsDiv = document.getElementById("columns");
   const result = document.getElementById("result");
 
-  function createColumns() {
-    for (let i = 0; i < wordLength; i++) {
-      let colLetters = [];
-
-      for (let j = 0; j < 3; j++) {
-        colLetters.push(letters[Math.floor(Math.random() * letters.length)]);
-      }
-
-      let columnDiv = document.createElement("div");
-      columnDiv.className = "column";
-
-      colLetters.forEach(letter => {
-        let letterDiv = document.createElement("div");
-        letterDiv.innerText = letter;
-        columnDiv.appendChild(letterDiv);
-      });
-
-      columnDiv.onclick = () => rotateColumn(columnDiv);
-
-      columnsDiv.appendChild(columnDiv);
-    }
+  const columns = [];
+  
+const SWIPE_THRESHOLD_PX = 18;   // how far you must drag before it counts
+const WHEEL_COOLDOWN_MS = 120;   // prevents super-fast scrolling spam
+  
+  function randLetter() {
+    return lettersPool[Math.floor(Math.random() * lettersPool.length)];
   }
 
-  function rotateColumn(columnDiv) {
-    let first = columnDiv.firstChild;
-    columnDiv.appendChild(first);
-  }
+  function buildColumn(i) {
+    // Longer ring makes the wheel feel real
+    const ring = Array.from({ length: 9 }, randLetter);
 
-  function checkWord() {
-    let word = "";
-    document.querySelectorAll(".column").forEach(col => {
-      word += col.children[0].innerText;
+    const col = document.createElement("div");
+    col.className = "column";
+
+    const wheel = document.createElement("div");
+    wheel.className = "wheel";
+
+    const strip = document.createElement("div");
+    strip.className = "strip";
+
+    ring.forEach(ch => {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.textContent = ch;
+      strip.appendChild(cell);
     });
 
-    result.innerText = "You made: " + word;
+    wheel.appendChild(strip);
+    col.appendChild(wheel);
+    columnsDiv.appendChild(col);
+
+    columns[i] = { ring, offset: 0, strip };
+
+    // click = move down one (letters slide)
+  // --- Desktop: mouse wheel to move up/down ---
+  let wheelLocked = false;
+  col.addEventListener("wheel", (e) => {
+    e.preventDefault(); // keep page from scrolling
+    if (wheelLocked) return;
+
+    wheelLocked = true;
+    const dir = e.deltaY > 0 ? +1 : -1; // scroll down = shift down
+    shift(i, dir);
+
+    setTimeout(() => (wheelLocked = false), WHEEL_COOLDOWN_MS);
+  }, { passive: false });
+
+  // --- Mobile/Touch: swipe up/down ---
+  let startY = null;
+  let active = false;
+
+  col.addEventListener("pointerdown", (e) => {
+    active = true;
+    startY = e.clientY;
+    col.setPointerCapture?.(e.pointerId);
+  });
+
+  col.addEventListener("pointermove", (e) => {
+    if (!active || startY === null) return;
+
+    const dy = e.clientY - startY;
+
+    // swipe up -> next letter (dir +1)
+    if (dy <= -SWIPE_THRESHOLD_PX) {
+      shift(i, +1);
+      startY = e.clientY;
+    }
+
+    // swipe down -> previous letter (dir -1)
+    if (dy >= SWIPE_THRESHOLD_PX) {
+      shift(i, -1);
+      startY = e.clientY;
+    }
+  });
+
+  col.addEventListener("pointerup", () => {
+    active = false;
+    startY = null;
+  });
+
+  col.addEventListener("pointercancel", () => {
+    active = false;
+    startY = null;
+  });
+
+  // Optional: tap/click still works as a quick "down"
+  col.addEventListener("click", () => shift(i, +1));
+    render(i, false);
   }
 
-  createColumns();
-</script>
+  function render(i, animate = true) {
+    const col = columns[i];
+    col.strip.style.transition = animate
+      ? "transform 280ms cubic-bezier(.22,1.2,.36,1)"
+      : "none";
 
+    col.strip.style.transform = `translateY(-${col.offset * ROW_H}px)`;
+  }
+
+  function shift(i, dir) {
+    const col = columns[i];
+    const n = col.ring.length;
+    col.offset = (col.offset + dir + n) % n;
+    render(i, true);
+    showWord();
+  }
+
+  function currentWord() {
+    return columns.map(col => {
+      const idx = (col.offset + ACTIVE_ROW) % col.ring.length;
+      return col.ring[idx];
+    }).join("");
+  }
+
+  function showWord() {
+    result.textContent = "Middle Row Word: " + currentWord();
+  }
+
+  // Button calls this
+  function checkWord() {
+    showWord();
+  }
+  window.checkWord = checkWord; // make sure onclick can find it
+
+  // Build the board
+  for (let i = 0; i < wordLength; i++) buildColumn(i);
+  showWord();
+</script>
 </body>
 </html>
