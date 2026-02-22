@@ -1,286 +1,674 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-<title>TypeShift Daily</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" />
+  <title>TypeShit Daily</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #111;
-  color: #fff;
-  text-align: center;
-  margin: 40px 0 90px;
-  padding: 0 12px;
-}
-h1 { margin: 0 0 8px; font-size: 34px; }
-.hint { opacity: 0.75; margin: 0 0 10px; }
-#status { opacity: 0.9; margin-top: 8px; min-height: 22px; }
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      margin: 40px 0 90px;
+      padding: 0 12px;
+    }
 
-.columns {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  margin: 20px 0;
-}
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
+    #status { opacity: 0.9; margin-top: 8px; min-height: 22px; }
 
-.column {
-  width: 84px;
-  cursor: pointer;
-  user-select: none;
-  touch-action: none;
-}
+    .columns {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin: 20px 0;
+    }
 
-.wheel {
-  position: relative;
-  height: 210px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #1b1b1b;
-  border: 1px solid #333;
-}
+    .column {
+      width: 84px;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+    }
 
-.wheel::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  top: 70px;
-  height: 70px;
-  background: rgba(255,255,255,0.08);
-}
+    .wheel {
+      position: relative;
+      height: 210px; /* 3 rows */
+      overflow: hidden;
+      border-radius: 14px;
+      background: #1b1b1b;
+      border: 1px solid #333;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+    }
 
-.strip {
-  position: absolute;
-  width: 100%;
-  transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
-}
+    /* Middle row highlight */
+    .wheel::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0;
+      top: 70px;
+      height: 70px;
+      background: rgba(255,255,255,0.08);
+      border-top: 1px solid rgba(255,255,255,0.15);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      pointer-events: none;
+    }
 
-.cell {
-  height: 70px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 44px;
-  font-weight: 900;
-}
+    .strip {
+      position: absolute;
+      width: 100%;
+      transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
+      will-change: transform;
+    }
 
-.actions { margin-top: 8px; }
+    .cell {
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
+      color: #f5f5f5;
+    }
 
-button {
-  padding: 10px 16px;
-  font-size: 18px;
-  border-radius: 10px;
-  border: none;
-  background: #4CAF50;
-  color: white;
-  cursor: pointer;
-}
-button.secondary { background: #2a2a2a; border: 1px solid #3a3a3a; }
+    /* Optional subtle fade on the “edge” rows (top/bottom) */
+    .cell.edge { opacity: 0.55; }
 
-#result { margin-top: 12px; font-size: 20px; }
+    .actions {
+      margin-top: 8px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-.pillwrap { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:12px; }
-.pill { background:#222; padding:6px 10px; border-radius:999px; font-weight:900; }
+    button {
+      padding: 10px 16px;
+      font-size: 18px;
+      border-radius: 10px;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button.secondary { background: #2a2a2a; border: 1px solid #3a3a3a; }
+    button:hover { filter: brightness(1.03); }
 
-@media (max-width: 430px) {
-  .column { width: 64px; }
-  .wheel { height: 168px; }
-  .wheel::after { top: 56px; height: 56px; }
-  .cell { height: 56px; font-size: 34px; }
-}
-</style>
+    #result {
+      margin-top: 12px;
+      font-size: 20px;
+      min-height: 28px;
+    }
+
+    #found {
+      max-width: 760px;
+      margin: 14px auto 0;
+      text-align: left;
+    }
+
+    .pillwrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      background: #222;
+      border: 1px solid #333;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 900;
+    }
+
+    /* Mobile shrink */
+    @media (max-width: 430px) {
+      .columns { gap: 10px; }
+      .column { width: 64px; }
+      .wheel { height: 168px; border-radius: 12px; }
+      .wheel::after { top: 56px; height: 56px; }
+      .cell { height: 56px; font-size: 34px; }
+      button { font-size: 16px; padding: 10px 14px; }
+    }
+
+    /* Win overlay */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.65);
+      padding: 18px;
+      z-index: 999;
+    }
+    #overlay.show { display: flex; }
+
+    .modal {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 18px;
+      max-width: 520px;
+      width: 100%;
+      text-align: left;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+    }
+    .modal h2 { margin: 0 0 10px; }
+    .modal p { margin: 0 0 12px; opacity: 0.9; line-height: 1.35; }
+    .modal .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  </style>
 </head>
 
 <body>
-<h1>TypeShift Daily</h1>
-<p class="hint">Swipe or scroll. Middle row forms the word.</p>
+  <h1>TypeShit Daily</h1>
+  <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).</p>
 
-<div class="columns" id="columns"></div>
+  <div class="columns" id="columns"></div>
 
-<div class="actions">
-<button onclick="submitWord()">Submit</button>
-<button class="secondary" onclick="resetToday()">Reset</button>
-</div>
+  <div class="actions">
+    <button onclick="submitWord()">Submit</button>
+    <button class="secondary" onclick="resetToday()">Reset</button>
+  </div>
 
-<p id="result"></p>
-<div id="status"></div>
-<div id="found"></div>
+  <p id="result"></p>
+  <div id="status"></div>
+  <div id="found"></div>
+
+  <div id="overlay">
+    <div class="modal">
+      <h2>🎉 Solved!</h2>
+      <p id="winText"></p>
+      <div class="row">
+        <button class="secondary" onclick="closeOverlay()">Close</button>
+        <button onclick="resetToday()">Play again (same puzzle)</button>
+      </div>
+    </div>
+  </div>
 
 <script>
+  // -----------------------
+  // Config
+  // -----------------------
+  const wordLength = 5;
 
-// ---------------- CONFIG ----------------
-const wordLength = 5;
-const ROWS = 5; // number of words per puzzle
+  // Reads from CSS so mobile stays aligned
+  let ROW_H = 70;
 
-let ROW_H = 70;
-const ACTIVE_ROW = 1;
+  // We render a “viewport” of 3 rows (top, middle, bottom). Middle is selected.
+  const ACTIVE_ROW = 1;
 
-const columnsDiv = document.getElementById("columns");
-const resultEl = document.getElementById("result");
-const statusEl = document.getElementById("status");
-const foundEl = document.getElementById("found");
+  // TRUE TypeShift: number of solution words == letters per column
+  const WORDS_PER_PUZZLE = 5; // (TypeShift-ish)
 
-const cols = [];
-let DICT_LIST = [];
-let DICT_SET = new Set();
-let SOLUTIONS = new Set();
-let FOUND = new Set();
+  // Input feel (SLOWER ON PHONE)
+  const SWIPE_THRESHOLD_PX = 42;
+  const TOUCH_STEP_COOLDOWN_MS = 160;
+  const WHEEL_COOLDOWN_MS = 140;
 
-// ---------------- UTIL ----------------
-function hashStringToUint32(str){
-  let h=2166136261;
-  for(let i=0;i<str.length;i++){
-    h^=str.charCodeAt(i);
-    h=Math.imul(h,16777619);
-  }
-  return h>>>0;
-}
-function mulberry32(seed){
-  return function(){
-    let t=(seed+=0x6D2B79F5);
-    t=Math.imul(t^(t>>>15),t|1);
-    t^=t+Math.imul(t^(t>>>7),t|61);
-    return ((t^(t>>>14))>>>0)/4294967296;
-  }
-}
-function dayKey(){
-  return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Los_Angeles"}).format(new Date());
-}
+  // Auto-submit feel
+  const AUTO_SUBMIT_COOLDOWN_MS = 220;
 
-// ---------------- DICTIONARY ----------------
-async function loadDictionary(){
-  const res = await fetch("words.txt",{cache:"no-store"});
-  const text = await res.text();
+  // -----------------------
+  // DOM
+  // -----------------------
+  const columnsDiv = document.getElementById("columns");
+  const resultEl = document.getElementById("result");
+  const statusEl = document.getElementById("status");
+  const foundEl = document.getElementById("found");
 
-  DICT_LIST = text.split(/\r?\n/)
-    .map(w=>w.trim().toLowerCase())
-    .filter(w=>w.length===wordLength && /^[a-z]+$/.test(w));
+  const overlayEl = document.getElementById("overlay");
+  const winTextEl = document.getElementById("winText");
 
-  DICT_SET = new Set(DICT_LIST);
-  statusEl.textContent=`Loaded ${DICT_LIST.length} words`;
-}
+  // -----------------------
+  // State
+  // -----------------------
+  // cols[i] = { list: string[], index: number, strip: HTMLElement, cells: HTMLElement[] }
+  const cols = [];
 
-// ---------------- COLUMN UI ----------------
-function buildColumn(i){
-  const col=document.createElement("div");
-  col.className="column";
+  let DICT_LIST = [];
+  let DICT_SET = new Set();
 
-  const wheel=document.createElement("div");
-  wheel.className="wheel";
+  let SOLUTIONS = new Set();
+  let FOUND = new Set();
 
-  const strip=document.createElement("div");
-  strip.className="strip";
+  let lastAutoWord = "";
+  let lastAutoAt = 0;
 
-  const cells=[];
-  for(let r=0;r<3;r++){
-    const cell=document.createElement("div");
-    cell.className="cell";
-    strip.appendChild(cell);
-    cells.push(cell);
+  // -----------------------
+  // Helpers: row height sync
+  // -----------------------
+  function syncRowHeightFromCSS() {
+    const cell = document.querySelector(".cell");
+    if (!cell) return;
+    const h = cell.getBoundingClientRect().height;
+    if (h && h > 0) ROW_H = h;
   }
 
-  wheel.appendChild(strip);
-  col.appendChild(wheel);
-  columnsDiv.appendChild(col);
-
-  cols[i]={list:["A"],index:0,strip,cells};
-
-  col.addEventListener("wheel",(e)=>{
-    e.preventDefault();
-    shift(i,e.deltaY>0?1:-1);
-  },{passive:false});
-
-  col.addEventListener("click",()=>shift(i,1));
-  renderColumn(i,false);
-}
-
-function renderColumn(i){
-  const c=cols[i];
-  const top=c.index-1;
-  const mid=c.index;
-  const bot=c.index+1;
-
-  c.cells[0].textContent=(top>=0)?c.list[top]:"";
-  c.cells[1].textContent=c.list[mid]||"";
-  c.cells[2].textContent=(bot<c.list.length)?c.list[bot]:"";
-}
-
-function shift(i,dir){
-  const c=cols[i];
-  const max=c.list.length-1;
-  c.index=Math.max(0,Math.min(max,c.index+dir));
-  renderColumn(i);
-  showCurrentWord();
-}
-
-// ---------------- GAME LOGIC ----------------
-function currentWord(){
-  return cols.map(c=>c.list[c.index]).join("").toLowerCase();
-}
-
-function showCurrentWord(){
-  resultEl.textContent="Current: "+currentWord().toUpperCase();
-}
-
-function renderFound(){
-  foundEl.innerHTML=`
-    <div class="pillwrap">
-      ${Array.from(FOUND).map(w=>`<span class="pill">${w.toUpperCase()}</span>`).join("")}
-    </div>`;
-}
-
-function submitWord(){
-  const w=currentWord();
-  if(!SOLUTIONS.has(w)){
-    resultEl.textContent="❌ Not valid";
-    return;
+  // -----------------------
+  // Helpers: daily seed
+  // -----------------------
+  function dayKeyPT() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
   }
-  if(FOUND.has(w)){
-    resultEl.textContent="↩ Already found";
-    return;
+
+  function storageKey() {
+    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|typeshift`;
   }
-  FOUND.add(w);
-  resultEl.textContent="✅ Found "+w.toUpperCase();
-  renderFound();
-}
 
-// ---------------- TRUE TYPESHIFT GENERATOR ----------------
-function generatePuzzle(){
-  const seed=hashStringToUint32("TypeShift|"+dayKey());
-  const rng=mulberry32(seed);
+  function hashStringToUint32(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
 
-  const shuffled=[...DICT_LIST].sort(()=>rng()-0.5);
-  const chosen=shuffled.slice(0,ROWS);
+  function mulberry32(seed) {
+    return function () {
+      let t = (seed += 0x6D2B79F5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
 
-  SOLUTIONS=new Set(chosen);
-  FOUND=new Set();
+  // -----------------------
+  // UI
+  // -----------------------
+  function currentWord() {
+    return cols.map(c => c.list[c.index]).join("").toLowerCase();
+  }
 
-  for(let i=0;i<wordLength;i++){
-    const colLetters=chosen.map(w=>w[i].toUpperCase());
+  function showCurrentWord() {
+    resultEl.textContent = "Current: " + currentWord().toUpperCase();
+  }
 
-    for(let a=colLetters.length-1;a>0;a--){
-      const j=Math.floor(rng()*(a+1));
-      [colLetters[a],colLetters[j]]=[colLetters[j],colLetters[a]];
+  function remainingCount() {
+    return Math.max(0, SOLUTIONS.size - FOUND.size);
+  }
+
+  function updateStatus() {
+    if (!SOLUTIONS.size) return;
+    statusEl.textContent =
+      `Daily ${dayKeyPT()} • Found ${FOUND.size}/${SOLUTIONS.size} • Remaining: ${remainingCount()}`;
+  }
+
+  function renderFound() {
+    const found = Array.from(FOUND).sort();
+    if (!found.length) {
+      foundEl.innerHTML = `<div style="opacity:.75;">No words found yet.</div>`;
+      return;
+    }
+    foundEl.innerHTML = `
+      <div style="opacity:.85; margin-bottom:6px;">
+        Found ${found.length} / ${SOLUTIONS.size} • Remaining: ${remainingCount()}
+      </div>
+      <div class="pillwrap">
+        ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
+      </div>
+    `;
+  }
+
+  function openOverlay() {
+    winTextEl.textContent = `You found all ${SOLUTIONS.size} words for ${dayKeyPT()}.`;
+    overlayEl.classList.add("show");
+  }
+
+  function closeOverlay() {
+    overlayEl.classList.remove("show");
+  }
+  window.closeOverlay = closeOverlay;
+
+  // -----------------------
+  // Persistence
+  // -----------------------
+  function saveProgress() {
+    try {
+      const data = {
+        indices: cols.map(c => c.index),
+        found: Array.from(FOUND)
+      };
+      localStorage.setItem(storageKey(), JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+
+      if (!data || !Array.isArray(data.indices) || !Array.isArray(data.found)) return false;
+      if (data.indices.length !== wordLength) return false;
+
+      for (let i = 0; i < wordLength; i++) {
+        const max = cols[i].list.length - 1;
+        cols[i].index = Math.max(0, Math.min(max, data.indices[i] ?? 0));
+        renderColumn(i, false);
+      }
+
+      FOUND = new Set(
+        data.found
+          .map(w => String(w).toLowerCase())
+          .filter(w => SOLUTIONS.has(w))
+      );
+
+      renderFound();
+      updateStatus();
+      showCurrentWord();
+
+      if (SOLUTIONS.size && FOUND.size === SOLUTIONS.size) openOverlay();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function clearProgress() {
+    try { localStorage.removeItem(storageKey()); } catch (e) {}
+  }
+
+  // -----------------------
+  // Dictionary
+  // -----------------------
+  async function loadDictionary() {
+    statusEl.textContent = "Loading words.txt…";
+
+    const res = await fetch("words.txt", { cache: "no-store" });
+    if (!res.ok) throw new Error(`words.txt load failed (${res.status})`);
+
+    const text = await res.text();
+
+    DICT_LIST = text
+      .split(/\r?\n/)
+      .map(w => w.trim().toLowerCase())
+      .filter(w => w && /^[a-z]+$/.test(w) && w.length === wordLength);
+
+    if (DICT_LIST.length === 0) {
+      throw new Error("words.txt loaded but contained 0 valid words for this word length.");
     }
 
-    cols[i].list=colLetters;
-    cols[i].index=Math.floor(rng()*colLetters.length);
-    renderColumn(i);
+    DICT_SET = new Set(DICT_LIST);
+    statusEl.textContent = `Loaded ${DICT_LIST.length.toLocaleString()} words`;
   }
 
-  showCurrentWord();
-  renderFound();
-}
+  // -----------------------
+  // Column rendering (bounded list)
+  // -----------------------
+  function buildColumn(i) {
+    const col = document.createElement("div");
+    col.className = "column";
 
-// ---------------- INIT ----------------
-async function init(){
-  for(let i=0;i<wordLength;i++) buildColumn(i);
-  await loadDictionary();
-  generatePuzzle();
-}
-init();
+    const wheel = document.createElement("div");
+    wheel.className = "wheel";
 
+    const strip = document.createElement("div");
+    strip.className = "strip";
+
+    // We only keep 3 visible cells (top/middle/bottom)
+    const cells = [];
+    for (let r = 0; r < 3; r++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (r !== ACTIVE_ROW) cell.classList.add("edge");
+      cell.textContent = "A";
+      strip.appendChild(cell);
+      cells.push(cell);
+    }
+
+    wheel.appendChild(strip);
+    col.appendChild(wheel);
+    columnsDiv.appendChild(col);
+
+    cols[i] = { list: ["A"], index: 0, strip, cells };
+
+    // Desktop wheel: slow it down with cooldown
+    let wheelLocked = false;
+    col.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if (wheelLocked) return;
+      wheelLocked = true;
+      const dir = e.deltaY > 0 ? +1 : -1; // ✅ supports up + down
+      shift(i, dir);
+      setTimeout(() => wheelLocked = false, WHEEL_COOLDOWN_MS);
+    }, { passive: false });
+
+    // Touch swipe: threshold + cooldown
+    let startY = null;
+    let active = false;
+    let lastTouchStepAt = 0;
+
+    col.addEventListener("pointerdown", (e) => {
+      active = true;
+      startY = e.clientY;
+      col.setPointerCapture?.(e.pointerId);
+    });
+
+    col.addEventListener("pointermove", (e) => {
+      if (!active || startY === null) return;
+
+      const now = Date.now();
+      if (now - lastTouchStepAt < TOUCH_STEP_COOLDOWN_MS) return;
+
+      const dy = e.clientY - startY;
+
+      if (dy <= -SWIPE_THRESHOLD_PX) {
+        shift(i, +1);
+        startY = e.clientY;
+        lastTouchStepAt = now;
+      } else if (dy >= SWIPE_THRESHOLD_PX) {
+        shift(i, -1);
+        startY = e.clientY;
+        lastTouchStepAt = now;
+      }
+    });
+
+    col.addEventListener("pointerup", () => { active = false; startY = null; });
+    col.addEventListener("pointercancel", () => { active = false; startY = null; });
+
+    // Tap moves down (bounded)
+    col.addEventListener("click", () => shift(i, +1));
+
+    renderColumn(i, false);
+  }
+
+  function renderColumn(i, animate = true) {
+    const c = cols[i];
+
+    // Set the three visible letters based on current index (bounded)
+    const topIdx = c.index - 1;
+    const midIdx = c.index;
+    const botIdx = c.index + 1;
+
+    c.cells[0].textContent = (topIdx >= 0) ? c.list[topIdx] : "";
+    c.cells[1].textContent = c.list[midIdx] ?? "";
+    c.cells[2].textContent = (botIdx < c.list.length) ? c.list[botIdx] : "";
+
+    c.strip.style.transition = animate
+      ? "transform 420ms cubic-bezier(.22,1.2,.36,1)"
+      : "none";
+    if (!animate) c.strip.style.transform = "translateY(0px)";
+  }
+
+  function shift(i, dir) {
+    const c = cols[i];
+    const max = c.list.length - 1;
+
+    // BOUNDED: clamp instead of wrap
+    const next = Math.max(0, Math.min(max, c.index + dir));
+    if (next === c.index) return; // already at top/bottom
+
+    // Animate “movement” then update letters and snap
+    const deltaPx = -dir * ROW_H;
+    c.strip.style.transition = "transform 420ms cubic-bezier(.22,1.2,.36,1)";
+    c.strip.style.transform = `translateY(${deltaPx}px)`;
+
+    c.index = next;
+
+    setTimeout(() => {
+      renderColumn(i, false);
+      c.strip.style.transform = "translateY(0px)";
+      showCurrentWord();
+      autoSubmitIfValid();
+      saveProgress();
+    }, 430);
+  }
+
+  // -----------------------
+  // TRUE TypeShift puzzle generation
+  // -----------------------
+  function shuffleInPlace(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function pickSolutionWords(rng) {
+    // Deterministic shuffle of the dictionary, then take N words
+    const pool = DICT_LIST.slice();
+    shuffleInPlace(pool, rng);
+    return pool.slice(0, WORDS_PER_PUZZLE);
+  }
+
+  function generateDailyPuzzle() {
+    const seed = hashStringToUint32("TypeShitDaily|" + dayKeyPT());
+    const rng = mulberry32(seed);
+
+    const chosenWords = pickSolutionWords(rng);
+
+    if (!chosenWords || chosenWords.length < WORDS_PER_PUZZLE) {
+      statusEl.textContent = "Not enough words to build today’s puzzle.";
+      return;
+    }
+
+    // In TypeShift style, today's valid words are exactly the chosen set
+    SOLUTIONS = new Set(chosenWords);
+    FOUND = new Set();
+    lastAutoWord = "";
+    lastAutoAt = 0;
+
+    // Build each column from the chosen words, then shuffle that column
+    for (let i = 0; i < wordLength; i++) {
+      const colLetters = chosenWords.map(w => w[i].toUpperCase());
+      shuffleInPlace(colLetters, rng);
+      cols[i].list = colLetters;
+      cols[i].index = Math.floor(rng() * cols[i].list.length);
+      renderColumn(i, false);
+    }
+
+    renderFound();
+    updateStatus();
+    showCurrentWord();
+
+    const restored = loadProgress();
+    if (!restored) saveProgress();
+  }
+
+  // -----------------------
+  // Auto-submit + submit
+  // -----------------------
+  function checkWin() {
+    if (SOLUTIONS.size > 0 && FOUND.size === SOLUTIONS.size) {
+      updateStatus();
+      renderFound();
+      openOverlay();
+    }
+  }
+
+  function autoSubmitIfValid() {
+    if (!SOLUTIONS.size) return;
+
+    const now = Date.now();
+    if (now - lastAutoAt < AUTO_SUBMIT_COOLDOWN_MS) return;
+
+    const w = currentWord();
+    if (!SOLUTIONS.has(w)) return;
+    if (FOUND.has(w)) return;
+    if (w === lastAutoWord && now - lastAutoAt < 1000) return;
+
+    FOUND.add(w);
+    lastAutoWord = w;
+    lastAutoAt = now;
+
+    resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
+
+  function submitWord() {
+    const w = currentWord();
+
+    if (!SOLUTIONS.size) {
+      resultEl.textContent = "Puzzle not ready yet.";
+      return;
+    }
+
+    // For TypeShift daily: valid today = SOLUTIONS set
+    if (!SOLUTIONS.has(w)) {
+      resultEl.textContent = `❌ Not valid today: ${w.toUpperCase()}`;
+      return;
+    }
+
+    if (FOUND.has(w)) {
+      resultEl.textContent = `↩️ Already found: ${w.toUpperCase()}`;
+      return;
+    }
+
+    FOUND.add(w);
+    resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
+  window.submitWord = submitWord;
+
+  function resetToday() {
+    closeOverlay();
+    clearProgress();
+    generateDailyPuzzle();
+    resultEl.textContent = "";
+  }
+  window.resetToday = resetToday;
+
+  // -----------------------
+  // Init
+  // -----------------------
+  async function init() {
+    for (let i = 0; i < wordLength; i++) buildColumn(i);
+
+    syncRowHeightFromCSS();
+    window.addEventListener("resize", () => {
+      syncRowHeightFromCSS();
+      for (let i = 0; i < wordLength; i++) renderColumn(i, false);
+    });
+
+    showCurrentWord();
+
+    try {
+      await loadDictionary();
+      generateDailyPuzzle();
+    } catch (err) {
+      statusEl.textContent = "❌ " + (err?.message || "Failed to load words.txt");
+      console.error(err);
+    }
+  }
+
+  init();
 </script>
+
 </body>
 </html>
