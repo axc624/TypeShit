@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>TypeShit Daily</title>
+  <title>TypeShit</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
@@ -17,7 +17,6 @@
 
     h1 { margin: 0 0 8px; font-size: 34px; }
     .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
-    #status { opacity: 0.9; margin-top: 8px; min-height: 22px; }
 
     .columns {
       display: flex;
@@ -74,7 +73,6 @@
       color: #f5f5f5;
     }
 
-    /* Optional subtle fade on the “edge” rows (top/bottom) */
     .cell.edge { opacity: 0.55; }
 
     .actions {
@@ -163,7 +161,7 @@
 </head>
 
 <body>
-  <h1>TypeShit Daily</h1>
+  <h1>TypeShit</h1>
   <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).</p>
 
   <div class="columns" id="columns"></div>
@@ -174,7 +172,6 @@
   </div>
 
   <p id="result"></p>
-  <div id="status"></div>
   <div id="found"></div>
 
   <div id="overlay">
@@ -183,7 +180,7 @@
       <p id="winText"></p>
       <div class="row">
         <button class="secondary" onclick="closeOverlay()">Close</button>
-        <button onclick="resetToday()">Play again (same puzzle)</button>
+        <button onclick="resetToday()">Play again</button>
       </div>
     </div>
   </div>
@@ -200,7 +197,7 @@
   // We render a “viewport” of 3 rows (top, middle, bottom). Middle is selected.
   const ACTIVE_ROW = 1;
 
-  // Hidden daily targets: number of words == letters per column
+  // Hidden targets: number of words == letters per column
   const WORDS_PER_PUZZLE = 5;
 
   // Input feel
@@ -216,7 +213,6 @@
   // -----------------------
   const columnsDiv = document.getElementById("columns");
   const resultEl = document.getElementById("result");
-  const statusEl = document.getElementById("status");
   const foundEl = document.getElementById("found");
 
   const overlayEl = document.getElementById("overlay");
@@ -225,13 +221,12 @@
   // -----------------------
   // State
   // -----------------------
-  // cols[i] = { list: string[], index: number, strip: HTMLElement, cells: HTMLElement[] }
   const cols = [];
 
   let DICT_LIST = [];
   let DICT_SET = new Set();
 
-  // Hidden daily target words
+  // Hidden target words (never displayed)
   let TARGET_SET = new Set();
 
   // Found ANY real words
@@ -241,7 +236,7 @@
   let lastAutoAt = 0;
 
   // -----------------------
-  // Helpers: row height sync
+  // Helpers
   // -----------------------
   function syncRowHeightFromCSS() {
     const cell = document.querySelector(".cell");
@@ -250,9 +245,6 @@
     if (h && h > 0) ROW_H = h;
   }
 
-  // -----------------------
-  // Helpers: daily seed
-  // -----------------------
   function dayKeyPT() {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: "America/Los_Angeles",
@@ -263,7 +255,8 @@
   }
 
   function storageKey() {
-    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|hiddenTargets`;
+    // We keep a day-based seed internally, but we never show “daily” in UI.
+    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|hidden`;
   }
 
   function hashStringToUint32(str) {
@@ -303,10 +296,6 @@
     resultEl.textContent = "Current: " + currentWord().toUpperCase();
   }
 
-  function updateStatus() {
-    statusEl.textContent = `Daily ${dayKeyPT()} • Words found: ${FOUND_ANY.size}`;
-  }
-
   function renderFound() {
     const found = Array.from(FOUND_ANY).sort();
     if (!found.length) {
@@ -315,7 +304,7 @@
     }
     foundEl.innerHTML = `
       <div style="opacity:.85; margin-bottom:6px;">
-        Found words (${found.length})
+        Words found: ${found.length}
       </div>
       <div class="pillwrap">
         ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
@@ -324,7 +313,7 @@
   }
 
   function openOverlay() {
-    winTextEl.textContent = `You solved today’s puzzle for ${dayKeyPT()}!`;
+    winTextEl.textContent = `You solved the puzzle.`;
     overlayEl.classList.add("show");
   }
 
@@ -368,10 +357,8 @@
       );
 
       renderFound();
-      updateStatus();
       showCurrentWord();
-
-      checkWin(); // if solved, show overlay
+      checkWin();
       return true;
     } catch (e) {
       return false;
@@ -386,13 +373,11 @@
   // Dictionary
   // -----------------------
   async function loadDictionary() {
-    statusEl.textContent = "Loading words.txt…";
-
+    resultEl.textContent = "Loading…";
     const res = await fetch("words.txt", { cache: "no-store" });
     if (!res.ok) throw new Error(`words.txt load failed (${res.status})`);
 
     const text = await res.text();
-
     DICT_LIST = text
       .split(/\r?\n/)
       .map(w => w.trim().toLowerCase())
@@ -401,9 +386,8 @@
     if (DICT_LIST.length === 0) {
       throw new Error("words.txt loaded but contained 0 valid words for this word length.");
     }
-
     DICT_SET = new Set(DICT_LIST);
-    statusEl.textContent = `Loaded ${DICT_LIST.length.toLocaleString()} words`;
+    resultEl.textContent = "";
   }
 
   // -----------------------
@@ -419,7 +403,6 @@
     const strip = document.createElement("div");
     strip.className = "strip";
 
-    // We only keep 3 visible cells (top/middle/bottom)
     const cells = [];
     for (let r = 0; r < 3; r++) {
       const cell = document.createElement("div");
@@ -488,7 +471,6 @@
 
   function renderColumn(i, animate = true) {
     const c = cols[i];
-
     const topIdx = c.index - 1;
     const midIdx = c.index;
     const botIdx = c.index + 1;
@@ -526,7 +508,7 @@
   }
 
   // -----------------------
-  // Daily puzzle generation (hidden targets)
+  // Puzzle generation (hidden targets)
   // -----------------------
   function pickSolutionWords(rng) {
     const pool = DICT_LIST.slice();
@@ -534,18 +516,15 @@
     return pool.slice(0, WORDS_PER_PUZZLE);
   }
 
-  function generateDailyPuzzle() {
-    const seed = hashStringToUint32("TypeShitDaily|" + dayKeyPT());
+  function generatePuzzle() {
+    const seed = hashStringToUint32("TypeShit|" + dayKeyPT());
     const rng = mulberry32(seed);
 
     const chosenWords = pickSolutionWords(rng);
-
-    if (!chosenWords || chosenWords.length < WORDS_PER_PUZZLE) {
-      statusEl.textContent = "Not enough words to build today’s puzzle.";
-      return;
-    }
+    if (!chosenWords || chosenWords.length < WORDS_PER_PUZZLE) return;
 
     TARGET_SET = new Set(chosenWords);
+
     FOUND_ANY = new Set();
     lastAutoWord = "";
     lastAutoAt = 0;
@@ -560,7 +539,6 @@
     }
 
     renderFound();
-    updateStatus();
     showCurrentWord();
 
     const restored = loadProgress();
@@ -568,7 +546,7 @@
   }
 
   // -----------------------
-  // Win check (targets hidden)
+  // Win check (targets stay hidden)
   // -----------------------
   function checkWin() {
     if (!TARGET_SET.size) return;
@@ -596,7 +574,6 @@
 
     resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
     renderFound();
-    updateStatus();
     saveProgress();
     checkWin();
   }
@@ -605,7 +582,7 @@
     const w = currentWord();
 
     if (!DICT_SET.size) {
-      resultEl.textContent = "Dictionary not ready yet.";
+      resultEl.textContent = "Not ready yet.";
       return;
     }
 
@@ -622,7 +599,6 @@
     FOUND_ANY.add(w);
     resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
     renderFound();
-    updateStatus();
     saveProgress();
     checkWin();
   }
@@ -631,7 +607,7 @@
   function resetToday() {
     closeOverlay();
     clearProgress();
-    generateDailyPuzzle();
+    generatePuzzle();
     resultEl.textContent = "";
   }
   window.resetToday = resetToday;
@@ -652,9 +628,9 @@
 
     try {
       await loadDictionary();
-      generateDailyPuzzle();
+      generatePuzzle();
     } catch (err) {
-      statusEl.textContent = "❌ " + (err?.message || "Failed to load words.txt");
+      resultEl.textContent = "❌ " + (err?.message || "Failed to load words.txt");
       console.error(err);
     }
   }
