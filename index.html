@@ -74,7 +74,6 @@
       color: #f5f5f5;
     }
 
-    /* Optional subtle fade on the “edge” rows (top/bottom) */
     .cell.edge { opacity: 0.55; }
 
     .actions {
@@ -123,7 +122,45 @@
       font-weight: 900;
     }
 
-    /* Mobile shrink */
+    .pill.target {
+      border-color: rgba(76, 175, 80, 0.95);
+      box-shadow: 0 0 0 1px rgba(76,175,80,0.25) inset;
+    }
+
+    .targetsBox {
+      background: #151515;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+
+    .targetsTitle {
+      opacity: 0.85;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .targetRow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .targetItem {
+      background: #1e1e1e;
+      border: 1px solid #2f2f2f;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 900;
+      opacity: 0.95;
+    }
+
+    .targetItem.done {
+      border-color: rgba(76, 175, 80, 0.95);
+      box-shadow: 0 0 0 1px rgba(76,175,80,0.25) inset;
+    }
+
     @media (max-width: 430px) {
       .columns { gap: 10px; }
       .column { width: 64px; }
@@ -164,7 +201,7 @@
 
 <body>
   <h1>TypeShit Daily</h1>
-  <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).</p>
+  <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).<br/>Any real word counts — but you still have 5 daily target words to solve.</p>
 
   <div class="columns" id="columns"></div>
 
@@ -200,10 +237,10 @@
   // We render a “viewport” of 3 rows (top, middle, bottom). Middle is selected.
   const ACTIVE_ROW = 1;
 
-  // TRUE TypeShift: number of solution words == letters per column
-  const WORDS_PER_PUZZLE = 5; // (TypeShift-ish)
+  // TypeShift goal: number of daily target words / letters per column
+  const WORDS_PER_PUZZLE = 5;
 
-  // Input feel (SLOWER ON PHONE)
+  // Input feel
   const SWIPE_THRESHOLD_PX = 42;
   const TOUCH_STEP_COOLDOWN_MS = 160;
   const WHEEL_COOLDOWN_MS = 140;
@@ -225,14 +262,17 @@
   // -----------------------
   // State
   // -----------------------
-  // cols[i] = { list: string[], index: number, strip: HTMLElement, cells: HTMLElement[] }
-  const cols = [];
+  const cols = []; // cols[i] = { list, index, strip, cells }
 
   let DICT_LIST = [];
   let DICT_SET = new Set();
 
-  let SOLUTIONS = new Set();
-  let FOUND = new Set();
+  // Daily targets (the “solve” objective)
+  let TARGET_WORDS = [];
+  let TARGET_SET = new Set();
+
+  // Found ANY real words (from the dictionary)
+  let FOUND_ANY = new Set();
 
   let lastAutoWord = "";
   let lastAutoAt = 0;
@@ -260,7 +300,8 @@
   }
 
   function storageKey() {
-    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|typeshift`;
+    // Note: includes wordLength + puzzle size so changing those won't corrupt saves
+    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|typeshiftB`;
   }
 
   function hashStringToUint32(str) {
@@ -281,6 +322,27 @@
     };
   }
 
+  function shuffleInPlace(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // -----------------------
+  // Derived counts
+  // -----------------------
+  function targetsFoundCount() {
+    let n = 0;
+    for (const w of TARGET_SET) if (FOUND_ANY.has(w)) n++;
+    return n;
+  }
+
+  function isSolved() {
+    return TARGET_SET.size > 0 && targetsFoundCount() === TARGET_SET.size;
+  }
+
   // -----------------------
   // UI
   // -----------------------
@@ -292,34 +354,47 @@
     resultEl.textContent = "Current: " + currentWord().toUpperCase();
   }
 
-  function remainingCount() {
-    return Math.max(0, SOLUTIONS.size - FOUND.size);
-  }
-
   function updateStatus() {
-    if (!SOLUTIONS.size) return;
+    if (!TARGET_SET.size) return;
     statusEl.textContent =
-      `Daily ${dayKeyPT()} • Found ${FOUND.size}/${SOLUTIONS.size} • Remaining: ${remainingCount()}`;
+      `Daily ${dayKeyPT()} • Targets ${targetsFoundCount()}/${TARGET_SET.size} • Total found: ${FOUND_ANY.size}`;
   }
 
   function renderFound() {
-    const found = Array.from(FOUND).sort();
-    if (!found.length) {
-      foundEl.innerHTML = `<div style="opacity:.75;">No words found yet.</div>`;
-      return;
-    }
-    foundEl.innerHTML = `
-      <div style="opacity:.85; margin-bottom:6px;">
-        Found ${found.length} / ${SOLUTIONS.size} • Remaining: ${remainingCount()}
-      </div>
-      <div class="pillwrap">
-        ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
+    const targets = TARGET_WORDS.slice();
+    const anyFound = Array.from(FOUND_ANY).sort();
+
+    const targetsHtml = `
+      <div class="targetsBox">
+        <div class="targetsTitle">Daily target words</div>
+        <div class="targetRow">
+          ${targets.map(w => {
+            const done = FOUND_ANY.has(w);
+            return `<span class="targetItem ${done ? "done" : ""}">${done ? "✅ " : ""}${w.toUpperCase()}</span>`;
+          }).join("")}
+        </div>
       </div>
     `;
+
+    const listHtml = anyFound.length
+      ? `
+        <div style="opacity:.85; margin-bottom:6px;">
+          Found words (${anyFound.length})
+        </div>
+        <div class="pillwrap">
+          ${anyFound.map(w => {
+            const isTarget = TARGET_SET.has(w);
+            return `<span class="pill ${isTarget ? "target" : ""}">${w.toUpperCase()}</span>`;
+          }).join("")}
+        </div>
+      `
+      : `<div style="opacity:.75;">No words found yet.</div>`;
+
+    foundEl.innerHTML = targetsHtml + listHtml;
   }
 
   function openOverlay() {
-    winTextEl.textContent = `You found all ${SOLUTIONS.size} words for ${dayKeyPT()}.`;
+    winTextEl.textContent = `You found all ${TARGET_SET.size} target words for ${dayKeyPT()} (and ${FOUND_ANY.size} total words).`;
     overlayEl.classList.add("show");
   }
 
@@ -335,7 +410,7 @@
     try {
       const data = {
         indices: cols.map(c => c.index),
-        found: Array.from(FOUND)
+        foundAny: Array.from(FOUND_ANY)
       };
       localStorage.setItem(storageKey(), JSON.stringify(data));
     } catch (e) {}
@@ -347,7 +422,7 @@
       if (!raw) return false;
       const data = JSON.parse(raw);
 
-      if (!data || !Array.isArray(data.indices) || !Array.isArray(data.found)) return false;
+      if (!data || !Array.isArray(data.indices) || !Array.isArray(data.foundAny)) return false;
       if (data.indices.length !== wordLength) return false;
 
       for (let i = 0; i < wordLength; i++) {
@@ -356,17 +431,17 @@
         renderColumn(i, false);
       }
 
-      FOUND = new Set(
-        data.found
+      FOUND_ANY = new Set(
+        data.foundAny
           .map(w => String(w).toLowerCase())
-          .filter(w => SOLUTIONS.has(w))
+          .filter(w => DICT_SET.has(w))
       );
 
       renderFound();
       updateStatus();
       showCurrentWord();
 
-      if (SOLUTIONS.size && FOUND.size === SOLUTIONS.size) openOverlay();
+      if (isSolved()) openOverlay();
       return true;
     } catch (e) {
       return false;
@@ -414,7 +489,6 @@
     const strip = document.createElement("div");
     strip.className = "strip";
 
-    // We only keep 3 visible cells (top/middle/bottom)
     const cells = [];
     for (let r = 0; r < 3; r++) {
       const cell = document.createElement("div");
@@ -431,18 +505,18 @@
 
     cols[i] = { list: ["A"], index: 0, strip, cells };
 
-    // Desktop wheel: slow it down with cooldown
+    // Desktop wheel
     let wheelLocked = false;
     col.addEventListener("wheel", (e) => {
       e.preventDefault();
       if (wheelLocked) return;
       wheelLocked = true;
-      const dir = e.deltaY > 0 ? +1 : -1; // ✅ supports up + down
+      const dir = e.deltaY > 0 ? +1 : -1;
       shift(i, dir);
       setTimeout(() => wheelLocked = false, WHEEL_COOLDOWN_MS);
     }, { passive: false });
 
-    // Touch swipe: threshold + cooldown
+    // Touch swipe
     let startY = null;
     let active = false;
     let lastTouchStepAt = 0;
@@ -475,7 +549,7 @@
     col.addEventListener("pointerup", () => { active = false; startY = null; });
     col.addEventListener("pointercancel", () => { active = false; startY = null; });
 
-    // Tap moves down (bounded)
+    // Tap moves down
     col.addEventListener("click", () => shift(i, +1));
 
     renderColumn(i, false);
@@ -484,7 +558,6 @@
   function renderColumn(i, animate = true) {
     const c = cols[i];
 
-    // Set the three visible letters based on current index (bounded)
     const topIdx = c.index - 1;
     const midIdx = c.index;
     const botIdx = c.index + 1;
@@ -503,11 +576,9 @@
     const c = cols[i];
     const max = c.list.length - 1;
 
-    // BOUNDED: clamp instead of wrap
     const next = Math.max(0, Math.min(max, c.index + dir));
-    if (next === c.index) return; // already at top/bottom
+    if (next === c.index) return;
 
-    // Animate “movement” then update letters and snap
     const deltaPx = -dir * ROW_H;
     c.strip.style.transition = "transform 420ms cubic-bezier(.22,1.2,.36,1)";
     c.strip.style.transform = `translateY(${deltaPx}px)`;
@@ -524,16 +595,8 @@
   }
 
   // -----------------------
-  // TRUE TypeShift puzzle generation
+  // TypeShift daily puzzle generation
   // -----------------------
-  function shuffleInPlace(arr, rng) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
   function pickSolutionWords(rng) {
     // Deterministic shuffle of the dictionary, then take N words
     const pool = DICT_LIST.slice();
@@ -552,13 +615,14 @@
       return;
     }
 
-    // In TypeShift style, today's valid words are exactly the chosen set
-    SOLUTIONS = new Set(chosenWords);
-    FOUND = new Set();
+    TARGET_WORDS = chosenWords;
+    TARGET_SET = new Set(chosenWords);
+
+    FOUND_ANY = new Set();
     lastAutoWord = "";
     lastAutoAt = 0;
 
-    // Build each column from the chosen words, then shuffle that column
+    // Build each column from chosen words, then shuffle that column
     for (let i = 0; i < wordLength; i++) {
       const colLetters = chosenWords.map(w => w[i].toUpperCase());
       shuffleInPlace(colLetters, rng);
@@ -576,32 +640,40 @@
   }
 
   // -----------------------
-  // Auto-submit + submit
+  // Win check
   // -----------------------
   function checkWin() {
-    if (SOLUTIONS.size > 0 && FOUND.size === SOLUTIONS.size) {
+    if (isSolved()) {
       updateStatus();
       renderFound();
       openOverlay();
     }
   }
 
+  // -----------------------
+  // Auto-submit + submit (ANY real word accepted)
+  // -----------------------
   function autoSubmitIfValid() {
-    if (!SOLUTIONS.size) return;
+    if (!DICT_SET.size) return;
 
     const now = Date.now();
     if (now - lastAutoAt < AUTO_SUBMIT_COOLDOWN_MS) return;
 
     const w = currentWord();
-    if (!SOLUTIONS.has(w)) return;
-    if (FOUND.has(w)) return;
+    if (!DICT_SET.has(w)) return;
+    if (FOUND_ANY.has(w)) return;
     if (w === lastAutoWord && now - lastAutoAt < 1000) return;
 
-    FOUND.add(w);
+    FOUND_ANY.add(w);
     lastAutoWord = w;
     lastAutoAt = now;
 
-    resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+    if (TARGET_SET.has(w)) {
+      resultEl.textContent = `🎯 Target found: ${w.toUpperCase()}`;
+    } else {
+      resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+    }
+
     renderFound();
     updateStatus();
     saveProgress();
@@ -611,24 +683,29 @@
   function submitWord() {
     const w = currentWord();
 
-    if (!SOLUTIONS.size) {
-      resultEl.textContent = "Puzzle not ready yet.";
+    if (!DICT_SET.size) {
+      resultEl.textContent = "Dictionary not ready yet.";
       return;
     }
 
-    // For TypeShift daily: valid today = SOLUTIONS set
-    if (!SOLUTIONS.has(w)) {
-      resultEl.textContent = `❌ Not valid today: ${w.toUpperCase()}`;
+    if (!DICT_SET.has(w)) {
+      resultEl.textContent = `❌ Not a word: ${w.toUpperCase()}`;
       return;
     }
 
-    if (FOUND.has(w)) {
+    if (FOUND_ANY.has(w)) {
       resultEl.textContent = `↩️ Already found: ${w.toUpperCase()}`;
       return;
     }
 
-    FOUND.add(w);
-    resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
+    FOUND_ANY.add(w);
+
+    if (TARGET_SET.has(w)) {
+      resultEl.textContent = `🎯 Target found: ${w.toUpperCase()}`;
+    } else {
+      resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
+    }
+
     renderFound();
     updateStatus();
     saveProgress();
