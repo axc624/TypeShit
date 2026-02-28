@@ -1,344 +1,666 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-<title>TypeShift Daily</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" />
+  <title>TypeShit Daily</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #111;
-  color: #fff;
-  text-align: center;
-  margin: 40px 0 90px;
-  padding: 0 12px;
-}
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      margin: 40px 0 90px;
+      padding: 0 12px;
+    }
 
-h1 { margin: 0 0 8px; font-size: 34px; }
-.hint { opacity: 0.75; margin: 0 0 10px; }
+    h1 { margin: 0 0 8px; font-size: 34px; }
+    .hint { opacity: 0.75; margin: 0 0 10px; line-height: 1.35; }
+    #status { opacity: 0.9; margin-top: 8px; min-height: 22px; }
 
-.columns {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  margin: 20px 0;
-}
+    .columns {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin: 20px 0;
+    }
 
-.column {
-  width: 84px;
-  cursor: pointer;
-  user-select: none;
-  touch-action: none;
-}
+    .column {
+      width: 84px;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+    }
 
-.wheel {
-  position: relative;
-  height: 210px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #1b1b1b;
-  border: 1px solid #333;
-}
+    .wheel {
+      position: relative;
+      height: 210px; /* 3 rows */
+      overflow: hidden;
+      border-radius: 14px;
+      background: #1b1b1b;
+      border: 1px solid #333;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+    }
 
-.wheel::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  top: 70px;
-  height: 70px;
-  background: rgba(255,255,255,0.08);
-}
+    /* Middle row highlight */
+    .wheel::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0;
+      top: 70px;
+      height: 70px;
+      background: rgba(255,255,255,0.08);
+      border-top: 1px solid rgba(255,255,255,0.15);
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      pointer-events: none;
+    }
 
-.strip {
-  position: absolute;
-  width: 100%;
-  transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
-}
+    .strip {
+      position: absolute;
+      width: 100%;
+      transition: transform 420ms cubic-bezier(.22,1.2,.36,1);
+      will-change: transform;
+    }
 
-.cell {
-  height: 70px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 44px;
-  font-weight: 900;
-}
+    .cell {
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
+      color: #f5f5f5;
+    }
 
-.cell.edge { opacity: 0.55; }
+    /* Optional subtle fade on the “edge” rows (top/bottom) */
+    .cell.edge { opacity: 0.55; }
 
-button {
-  padding: 10px 16px;
-  font-size: 18px;
-  border-radius: 10px;
-  border: none;
-  background: #4CAF50;
-  color: white;
-  cursor: pointer;
-}
+    .actions {
+      margin-top: 8px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-button.secondary {
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-}
+    button {
+      padding: 10px 16px;
+      font-size: 18px;
+      border-radius: 10px;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button.secondary { background: #2a2a2a; border: 1px solid #3a3a3a; }
+    button:hover { filter: brightness(1.03); }
 
-#result { margin-top: 12px; font-size: 20px; }
-#status { margin-top: 8px; opacity: .9; }
-#found { margin-top: 12px; }
+    #result {
+      margin-top: 12px;
+      font-size: 20px;
+      min-height: 28px;
+    }
 
-.pillwrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-}
+    #found {
+      max-width: 760px;
+      margin: 14px auto 0;
+      text-align: left;
+    }
 
-.pill {
-  background: #222;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-weight: 900;
-}
+    .pillwrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
 
-#overlay {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,0.65);
-}
+    .pill {
+      background: #222;
+      border: 1px solid #333;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 900;
+    }
 
-#overlay.show { display: flex; }
+    /* Mobile shrink */
+    @media (max-width: 430px) {
+      .columns { gap: 10px; }
+      .column { width: 64px; }
+      .wheel { height: 168px; border-radius: 12px; }
+      .wheel::after { top: 56px; height: 56px; }
+      .cell { height: 56px; font-size: 34px; }
+      button { font-size: 16px; padding: 10px 14px; }
+    }
 
-.modal {
-  background: #141414;
-  border-radius: 16px;
-  padding: 20px;
-  width: 320px;
-}
-</style>
+    /* Win overlay */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.65);
+      padding: 18px;
+      z-index: 999;
+    }
+    #overlay.show { display: flex; }
+
+    .modal {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 18px;
+      max-width: 520px;
+      width: 100%;
+      text-align: left;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+    }
+    .modal h2 { margin: 0 0 10px; }
+    .modal p { margin: 0 0 12px; opacity: 0.9; line-height: 1.35; }
+    .modal .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  </style>
 </head>
 
 <body>
+  <h1>TypeShit Daily</h1>
+  <p class="hint">Swipe/scroll. Middle row makes the word. Columns stop at top/bottom (no wrap).</p>
 
-<h1>TypeShift Daily</h1>
-<p class="hint">Swipe or scroll. Middle row forms the word.</p>
+  <div class="columns" id="columns"></div>
 
-<div class="columns" id="columns"></div>
-
-<div>
-  <button onclick="submitWord()">Submit</button>
-  <button class="secondary" onclick="resetToday()">Reset</button>
-</div>
-
-<p id="result"></p>
-<div id="status"></div>
-<div id="found"></div>
-
-<div id="overlay">
-  <div class="modal">
-    <h2>🎉 Puzzle Solved!</h2>
-    <p id="winText"></p>
-    <button onclick="closeOverlay()">Close</button>
+  <div class="actions">
+    <button onclick="submitWord()">Submit</button>
+    <button class="secondary" onclick="resetToday()">Reset</button>
   </div>
-</div>
+
+  <p id="result"></p>
+  <div id="status"></div>
+  <div id="found"></div>
+
+  <div id="overlay">
+    <div class="modal">
+      <h2>🎉 Solved!</h2>
+      <p id="winText"></p>
+      <div class="row">
+        <button class="secondary" onclick="closeOverlay()">Close</button>
+        <button onclick="resetToday()">Play again (same puzzle)</button>
+      </div>
+    </div>
+  </div>
 
 <script>
+  // -----------------------
+  // Config
+  // -----------------------
+  const wordLength = 5;
 
-// CONFIG
-const wordLength = 5;
-const WORDS_PER_PUZZLE = 5;
+  // Reads from CSS so mobile stays aligned
+  let ROW_H = 70;
 
-let ROW_H = 70;
-const ACTIVE_ROW = 1;
+  // We render a “viewport” of 3 rows (top, middle, bottom). Middle is selected.
+  const ACTIVE_ROW = 1;
 
-const columnsDiv = document.getElementById("columns");
-const resultEl = document.getElementById("result");
-const statusEl = document.getElementById("status");
-const foundEl = document.getElementById("found");
-const overlayEl = document.getElementById("overlay");
-const winTextEl = document.getElementById("winText");
+  // Hidden daily targets: number of words == letters per column
+  const WORDS_PER_PUZZLE = 5;
 
-const cols = [];
+  // Input feel
+  const SWIPE_THRESHOLD_PX = 42;
+  const TOUCH_STEP_COOLDOWN_MS = 160;
+  const WHEEL_COOLDOWN_MS = 140;
 
-let DICT_LIST = [];
-let DICT_SET = new Set();
+  // Auto-submit feel
+  const AUTO_SUBMIT_COOLDOWN_MS = 220;
 
-let TARGET_WORDS = [];
-let TARGET_SET = new Set();
-let FOUND_ANY = new Set();
+  // -----------------------
+  // DOM
+  // -----------------------
+  const columnsDiv = document.getElementById("columns");
+  const resultEl = document.getElementById("result");
+  const statusEl = document.getElementById("status");
+  const foundEl = document.getElementById("found");
 
-// RNG
-function hashStringToUint32(str){
-  let h=2166136261;
-  for(let i=0;i<str.length;i++){
-    h^=str.charCodeAt(i);
-    h=Math.imul(h,16777619);
-  }
-  return h>>>0;
-}
-function mulberry32(seed){
-  return function(){
-    let t=(seed+=0x6D2B79F5);
-    t=Math.imul(t^(t>>>15),t|1);
-    t^=t+Math.imul(t^(t>>>7),t|61);
-    return ((t^(t>>>14))>>>0)/4294967296;
-  }
-}
-function dayKey(){
-  return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Los_Angeles"}).format(new Date());
-}
+  const overlayEl = document.getElementById("overlay");
+  const winTextEl = document.getElementById("winText");
 
-// Dictionary
-async function loadDictionary(){
-  const res=await fetch("words.txt",{cache:"no-store"});
-  const text=await res.text();
-  DICT_LIST=text.split(/\r?\n/)
-    .map(w=>w.trim().toLowerCase())
-    .filter(w=>w.length===wordLength && /^[a-z]+$/.test(w));
-  DICT_SET=new Set(DICT_LIST);
-  statusEl.textContent=`Loaded ${DICT_LIST.length} words`;
-}
+  // -----------------------
+  // State
+  // -----------------------
+  // cols[i] = { list: string[], index: number, strip: HTMLElement, cells: HTMLElement[] }
+  const cols = [];
 
-// Columns
-function buildColumn(i){
-  const col=document.createElement("div");
-  col.className="column";
-  const wheel=document.createElement("div");
-  wheel.className="wheel";
-  const strip=document.createElement("div");
-  strip.className="strip";
+  let DICT_LIST = [];
+  let DICT_SET = new Set();
 
-  const cells=[];
-  for(let r=0;r<3;r++){
-    const cell=document.createElement("div");
-    cell.className="cell";
-    strip.appendChild(cell);
-    cells.push(cell);
+  // Hidden daily target words
+  let TARGET_SET = new Set();
+
+  // Found ANY real words
+  let FOUND_ANY = new Set();
+
+  let lastAutoWord = "";
+  let lastAutoAt = 0;
+
+  // -----------------------
+  // Helpers: row height sync
+  // -----------------------
+  function syncRowHeightFromCSS() {
+    const cell = document.querySelector(".cell");
+    if (!cell) return;
+    const h = cell.getBoundingClientRect().height;
+    if (h && h > 0) ROW_H = h;
   }
 
-  wheel.appendChild(strip);
-  col.appendChild(wheel);
-  columnsDiv.appendChild(col);
+  // -----------------------
+  // Helpers: daily seed
+  // -----------------------
+  function dayKeyPT() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  }
 
-  cols[i]={list:["A"],index:0,strip,cells};
+  function storageKey() {
+    return `typeshit|${dayKeyPT()}|len${wordLength}|rows${WORDS_PER_PUZZLE}|hiddenTargets`;
+  }
 
-  col.addEventListener("wheel",(e)=>{
-    e.preventDefault();
-    shift(i,e.deltaY>0?1:-1);
-  },{passive:false});
+  function hashStringToUint32(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
 
-  col.addEventListener("click",()=>shift(i,1));
-}
+  function mulberry32(seed) {
+    return function () {
+      let t = (seed += 0x6D2B79F5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
 
-function renderColumn(i){
-  const c=cols[i];
-  const top=c.index-1;
-  const mid=c.index;
-  const bot=c.index+1;
+  function shuffleInPlace(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
 
-  c.cells[0].textContent=(top>=0)?c.list[top]:"";
-  c.cells[1].textContent=c.list[mid]||"";
-  c.cells[2].textContent=(bot<c.list.length)?c.list[bot]:"";
-}
+  // -----------------------
+  // UI
+  // -----------------------
+  function currentWord() {
+    return cols.map(c => c.list[c.index]).join("").toLowerCase();
+  }
 
-function shift(i,dir){
-  const c=cols[i];
-  const max=c.list.length-1;
-  c.index=Math.max(0,Math.min(max,c.index+dir));
-  renderColumn(i);
-  showCurrentWord();
-}
+  function showCurrentWord() {
+    resultEl.textContent = "Current: " + currentWord().toUpperCase();
+  }
 
-// Word helpers
-function currentWord(){
-  return cols.map(c=>c.list[c.index]).join("").toLowerCase();
-}
+  function updateStatus() {
+    statusEl.textContent = `Daily ${dayKeyPT()} • Words found: ${FOUND_ANY.size}`;
+  }
 
-function showCurrentWord(){
-  resultEl.textContent="Current: "+currentWord().toUpperCase();
-}
+  function renderFound() {
+    const found = Array.from(FOUND_ANY).sort();
+    if (!found.length) {
+      foundEl.innerHTML = `<div style="opacity:.75;">No words found yet.</div>`;
+      return;
+    }
+    foundEl.innerHTML = `
+      <div style="opacity:.85; margin-bottom:6px;">
+        Found words (${found.length})
+      </div>
+      <div class="pillwrap">
+        ${found.map(w => `<span class="pill">${w.toUpperCase()}</span>`).join("")}
+      </div>
+    `;
+  }
 
-function updateStatus(){
-  statusEl.textContent=
-    `Targets found: ${[...TARGET_SET].filter(w=>FOUND_ANY.has(w)).length}/${TARGET_SET.size} • Total words: ${FOUND_ANY.size}`;
-}
-
-function renderFound(){
-  foundEl.innerHTML=`
-    <div class="pillwrap">
-      ${[...FOUND_ANY].sort().map(w=>`<span class="pill">${w.toUpperCase()}</span>`).join("")}
-    </div>`;
-}
-
-function checkWin(){
-  const count=[...TARGET_SET].filter(w=>FOUND_ANY.has(w)).length;
-  if(count===TARGET_SET.size){
-    winTextEl.textContent=`You solved today's hidden puzzle!`;
+  function openOverlay() {
+    winTextEl.textContent = `You solved today’s puzzle for ${dayKeyPT()}!`;
     overlayEl.classList.add("show");
   }
-}
 
-function closeOverlay(){
-  overlayEl.classList.remove("show");
-}
-
-// Submit
-function submitWord(){
-  const w=currentWord();
-  if(!DICT_SET.has(w)){
-    resultEl.textContent="❌ Not a word";
-    return;
+  function closeOverlay() {
+    overlayEl.classList.remove("show");
   }
-  if(FOUND_ANY.has(w)){
-    resultEl.textContent="↩ Already found";
-    return;
-  }
+  window.closeOverlay = closeOverlay;
 
-  FOUND_ANY.add(w);
-  resultEl.textContent="✅ Found "+w.toUpperCase();
-  renderFound();
-  updateStatus();
-  checkWin();
-}
-
-// Puzzle generation
-function generatePuzzle(){
-  const seed=hashStringToUint32("TypeShift|"+dayKey());
-  const rng=mulberry32(seed);
-
-  const pool=[...DICT_LIST].sort(()=>rng()-0.5);
-  TARGET_WORDS=pool.slice(0,WORDS_PER_PUZZLE);
-  TARGET_SET=new Set(TARGET_WORDS);
-  FOUND_ANY=new Set();
-
-  for(let i=0;i<wordLength;i++){
-    const colLetters=TARGET_WORDS.map(w=>w[i].toUpperCase());
-    colLetters.sort(()=>rng()-0.5);
-    cols[i].list=colLetters;
-    cols[i].index=Math.floor(rng()*colLetters.length);
-    renderColumn(i);
+  // -----------------------
+  // Persistence
+  // -----------------------
+  function saveProgress() {
+    try {
+      const data = {
+        indices: cols.map(c => c.index),
+        foundAny: Array.from(FOUND_ANY)
+      };
+      localStorage.setItem(storageKey(), JSON.stringify(data));
+    } catch (e) {}
   }
 
-  renderFound();
-  updateStatus();
-  showCurrentWord();
-}
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return false;
+      const data = JSON.parse(raw);
 
-function resetToday(){
-  overlayEl.classList.remove("show");
-  generatePuzzle();
-}
+      if (!data || !Array.isArray(data.indices) || !Array.isArray(data.foundAny)) return false;
+      if (data.indices.length !== wordLength) return false;
 
-// Init
-async function init(){
-  for(let i=0;i<wordLength;i++) buildColumn(i);
-  await loadDictionary();
-  generatePuzzle();
-}
-init();
+      for (let i = 0; i < wordLength; i++) {
+        const max = cols[i].list.length - 1;
+        cols[i].index = Math.max(0, Math.min(max, data.indices[i] ?? 0));
+        renderColumn(i, false);
+      }
 
+      FOUND_ANY = new Set(
+        data.foundAny
+          .map(w => String(w).toLowerCase())
+          .filter(w => DICT_SET.has(w))
+      );
+
+      renderFound();
+      updateStatus();
+      showCurrentWord();
+
+      checkWin(); // if solved, show overlay
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function clearProgress() {
+    try { localStorage.removeItem(storageKey()); } catch (e) {}
+  }
+
+  // -----------------------
+  // Dictionary
+  // -----------------------
+  async function loadDictionary() {
+    statusEl.textContent = "Loading words.txt…";
+
+    const res = await fetch("words.txt", { cache: "no-store" });
+    if (!res.ok) throw new Error(`words.txt load failed (${res.status})`);
+
+    const text = await res.text();
+
+    DICT_LIST = text
+      .split(/\r?\n/)
+      .map(w => w.trim().toLowerCase())
+      .filter(w => w && /^[a-z]+$/.test(w) && w.length === wordLength);
+
+    if (DICT_LIST.length === 0) {
+      throw new Error("words.txt loaded but contained 0 valid words for this word length.");
+    }
+
+    DICT_SET = new Set(DICT_LIST);
+    statusEl.textContent = `Loaded ${DICT_LIST.length.toLocaleString()} words`;
+  }
+
+  // -----------------------
+  // Column rendering (bounded list)
+  // -----------------------
+  function buildColumn(i) {
+    const col = document.createElement("div");
+    col.className = "column";
+
+    const wheel = document.createElement("div");
+    wheel.className = "wheel";
+
+    const strip = document.createElement("div");
+    strip.className = "strip";
+
+    // We only keep 3 visible cells (top/middle/bottom)
+    const cells = [];
+    for (let r = 0; r < 3; r++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (r !== ACTIVE_ROW) cell.classList.add("edge");
+      cell.textContent = "A";
+      strip.appendChild(cell);
+      cells.push(cell);
+    }
+
+    wheel.appendChild(strip);
+    col.appendChild(wheel);
+    columnsDiv.appendChild(col);
+
+    cols[i] = { list: ["A"], index: 0, strip, cells };
+
+    // Desktop wheel
+    let wheelLocked = false;
+    col.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if (wheelLocked) return;
+      wheelLocked = true;
+      const dir = e.deltaY > 0 ? +1 : -1;
+      shift(i, dir);
+      setTimeout(() => wheelLocked = false, WHEEL_COOLDOWN_MS);
+    }, { passive: false });
+
+    // Touch swipe
+    let startY = null;
+    let active = false;
+    let lastTouchStepAt = 0;
+
+    col.addEventListener("pointerdown", (e) => {
+      active = true;
+      startY = e.clientY;
+      col.setPointerCapture?.(e.pointerId);
+    });
+
+    col.addEventListener("pointermove", (e) => {
+      if (!active || startY === null) return;
+
+      const now = Date.now();
+      if (now - lastTouchStepAt < TOUCH_STEP_COOLDOWN_MS) return;
+
+      const dy = e.clientY - startY;
+
+      if (dy <= -SWIPE_THRESHOLD_PX) {
+        shift(i, +1);
+        startY = e.clientY;
+        lastTouchStepAt = now;
+      } else if (dy >= SWIPE_THRESHOLD_PX) {
+        shift(i, -1);
+        startY = e.clientY;
+        lastTouchStepAt = now;
+      }
+    });
+
+    col.addEventListener("pointerup", () => { active = false; startY = null; });
+    col.addEventListener("pointercancel", () => { active = false; startY = null; });
+
+    // Tap moves down
+    col.addEventListener("click", () => shift(i, +1));
+
+    renderColumn(i, false);
+  }
+
+  function renderColumn(i, animate = true) {
+    const c = cols[i];
+
+    const topIdx = c.index - 1;
+    const midIdx = c.index;
+    const botIdx = c.index + 1;
+
+    c.cells[0].textContent = (topIdx >= 0) ? c.list[topIdx] : "";
+    c.cells[1].textContent = c.list[midIdx] ?? "";
+    c.cells[2].textContent = (botIdx < c.list.length) ? c.list[botIdx] : "";
+
+    c.strip.style.transition = animate
+      ? "transform 420ms cubic-bezier(.22,1.2,.36,1)"
+      : "none";
+    if (!animate) c.strip.style.transform = "translateY(0px)";
+  }
+
+  function shift(i, dir) {
+    const c = cols[i];
+    const max = c.list.length - 1;
+
+    const next = Math.max(0, Math.min(max, c.index + dir));
+    if (next === c.index) return;
+
+    const deltaPx = -dir * ROW_H;
+    c.strip.style.transition = "transform 420ms cubic-bezier(.22,1.2,.36,1)";
+    c.strip.style.transform = `translateY(${deltaPx}px)`;
+
+    c.index = next;
+
+    setTimeout(() => {
+      renderColumn(i, false);
+      c.strip.style.transform = "translateY(0px)";
+      showCurrentWord();
+      autoSubmitIfValid();
+      saveProgress();
+    }, 430);
+  }
+
+  // -----------------------
+  // Daily puzzle generation (hidden targets)
+  // -----------------------
+  function pickSolutionWords(rng) {
+    const pool = DICT_LIST.slice();
+    shuffleInPlace(pool, rng);
+    return pool.slice(0, WORDS_PER_PUZZLE);
+  }
+
+  function generateDailyPuzzle() {
+    const seed = hashStringToUint32("TypeShitDaily|" + dayKeyPT());
+    const rng = mulberry32(seed);
+
+    const chosenWords = pickSolutionWords(rng);
+
+    if (!chosenWords || chosenWords.length < WORDS_PER_PUZZLE) {
+      statusEl.textContent = "Not enough words to build today’s puzzle.";
+      return;
+    }
+
+    TARGET_SET = new Set(chosenWords);
+    FOUND_ANY = new Set();
+    lastAutoWord = "";
+    lastAutoAt = 0;
+
+    // Build each column from chosen words, then shuffle that column
+    for (let i = 0; i < wordLength; i++) {
+      const colLetters = chosenWords.map(w => w[i].toUpperCase());
+      shuffleInPlace(colLetters, rng);
+      cols[i].list = colLetters;
+      cols[i].index = Math.floor(rng() * cols[i].list.length);
+      renderColumn(i, false);
+    }
+
+    renderFound();
+    updateStatus();
+    showCurrentWord();
+
+    const restored = loadProgress();
+    if (!restored) saveProgress();
+  }
+
+  // -----------------------
+  // Win check (targets hidden)
+  // -----------------------
+  function checkWin() {
+    if (!TARGET_SET.size) return;
+    const solved = [...TARGET_SET].every(w => FOUND_ANY.has(w));
+    if (solved) openOverlay();
+  }
+
+  // -----------------------
+  // Auto-submit + submit (ANY real word accepted)
+  // -----------------------
+  function autoSubmitIfValid() {
+    if (!DICT_SET.size) return;
+
+    const now = Date.now();
+    if (now - lastAutoAt < AUTO_SUBMIT_COOLDOWN_MS) return;
+
+    const w = currentWord();
+    if (!DICT_SET.has(w)) return;
+    if (FOUND_ANY.has(w)) return;
+    if (w === lastAutoWord && now - lastAutoAt < 1000) return;
+
+    FOUND_ANY.add(w);
+    lastAutoWord = w;
+    lastAutoAt = now;
+
+    resultEl.textContent = `✅ Auto-found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
+
+  function submitWord() {
+    const w = currentWord();
+
+    if (!DICT_SET.size) {
+      resultEl.textContent = "Dictionary not ready yet.";
+      return;
+    }
+
+    if (!DICT_SET.has(w)) {
+      resultEl.textContent = `❌ Not a word: ${w.toUpperCase()}`;
+      return;
+    }
+
+    if (FOUND_ANY.has(w)) {
+      resultEl.textContent = `↩️ Already found: ${w.toUpperCase()}`;
+      return;
+    }
+
+    FOUND_ANY.add(w);
+    resultEl.textContent = `✅ Found: ${w.toUpperCase()}`;
+    renderFound();
+    updateStatus();
+    saveProgress();
+    checkWin();
+  }
+  window.submitWord = submitWord;
+
+  function resetToday() {
+    closeOverlay();
+    clearProgress();
+    generateDailyPuzzle();
+    resultEl.textContent = "";
+  }
+  window.resetToday = resetToday;
+
+  // -----------------------
+  // Init
+  // -----------------------
+  async function init() {
+    for (let i = 0; i < wordLength; i++) buildColumn(i);
+
+    syncRowHeightFromCSS();
+    window.addEventListener("resize", () => {
+      syncRowHeightFromCSS();
+      for (let i = 0; i < wordLength; i++) renderColumn(i, false);
+    });
+
+    showCurrentWord();
+
+    try {
+      await loadDictionary();
+      generateDailyPuzzle();
+    } catch (err) {
+      statusEl.textContent = "❌ " + (err?.message || "Failed to load words.txt");
+      console.error(err);
+    }
+  }
+
+  init();
 </script>
+
 </body>
 </html>
